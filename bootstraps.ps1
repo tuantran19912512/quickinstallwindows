@@ -76,9 +76,19 @@ Update-UI "Hoàn tất! Đang khởi động bảng điều khiển chính..." 1
 Start-Sleep -Seconds 1
 $Form.Close()
 
-# Chạy file script Python của ông
-if (Test-Path "quickinstall.py") {
-    python "quickinstall.py"
+# --- ĐOẠN SỬA LỖI Ở ĐÂY ---
+# Lấy đường dẫn của thư mục chứa file script .ps1 đang chạy
+$PSScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
+
+# Kết hợp với tên file python để có đường dẫn chính xác tuyệt đối
+$PythonScriptPath = Join-Path $PSScriptDir "quickinstall.py"
+
+if (Test-Path $PythonScriptPath) {
+    # Chuyển thư mục làm việc về đúng chỗ chứa file
+    Set-Location $PSScriptDir
+    
+    # Chạy file với đường dẫn đầy đủ
+    python $PythonScriptPath
 } else {
-    [System.Windows.Forms.MessageBox]::Show("Không tìm thấy file quickinstall.py trong thư mục hiện tại!", "Lỗi")
+    [System.Windows.Forms.MessageBox]::Show("Không tìm thấy file quickinstall.py tại: `n$PythonScriptPath", "Lỗi Đường Dẫn")
 }
