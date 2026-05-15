@@ -199,9 +199,9 @@ $PathsToCheck = @(
 
 foreach ($p in $PathsToCheck) {{
     cmd.exe /c "attrib -h -s -r `"$p`" >nul 2>&1"
-    if (Test-Path $p -Force) {{
-        $FoundWIM = $p
-        break
+    if (Test-Path $p) {{
+    $FoundWIM = $p
+    break
     }}
 }}
 
