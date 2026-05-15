@@ -98,7 +98,7 @@ def tim_o_dia_luu_tru_an_toan():
 def sao_luu_du_lieu_he_thong(thu_muc_dich, lua_chon_driver, lua_chon_wifi, ham_ghi_log):
     kich_ban_setup_complete = '@echo off\n'
 
-    # 1. TÍCH HỢP CODE PHỤC HỒI WIFI (NẾU CÓ CHỌN)
+    # 1. TÍCH HỢP CODE PHỤC HỒI WIFI
     if lua_chon_wifi:
         ham_ghi_log("Khởi động tiến trình bóc tách và sao lưu hồ sơ WiFi...")
         thu_muc_chua_wifi = os.path.join(thu_muc_dich, "WiFi")
@@ -140,7 +140,6 @@ def sao_luu_du_lieu_he_thong(thu_muc_dich, lua_chon_driver, lua_chon_wifi, ham_g
         'del /f /q "%~f0" >nul 2>&1\n'
     )
 
-    # Ghi file SetupComplete.cmd ra
     with open(os.path.join(thu_muc_dich, "SetupComplete.cmd"), "w", encoding="utf-8") as tep_lenh:
         tep_lenh.write(kich_ban_setup_complete)
 
@@ -176,6 +175,7 @@ def tiem_kich_ban_winre(o_dia_luu_wim, ham_ghi_log):
     os.makedirs(thu_muc_cai_dat, exist_ok=True)
     with open(f"{thu_muc_cai_dat}\\unattend.xml", "w", encoding="utf-8") as tep_xml: tep_xml.write(noi_dung_unattend)
     
+    # LƯU Ý: Đã fix lỗi thoát chuỗi Python (dùng \\ cho mọi đường dẫn) và bổ sung lại Bypass TPM
     ma_nguon_ps = f"""
     $KiTuHeThong = [System.IO.Path]::GetPathRoot($env:windir).Substring(0,1)
     $ThongTinPhanVung = Get-Partition -DriveLetter $KiTuHeThong
@@ -201,7 +201,13 @@ dism /apply-image /imagefile:"%WPATH%" /index:1 /applydir:W:\\
 if exist "%%~dpWPATHDrivers" ( dism /image:W:\\ /Add-Driver /Driver:"%%~dpWPATHDrivers" /Recurse )
 bcdboot W:\\Windows
 
-:: Doi ten may qua Registry
+:: Phuc hoi Bypass TPM & Secure Boot
+reg load HKLM\\ZT W:\\Windows\\System32\\config\\SYSTEM
+reg add "HKLM\\ZT\\Setup\\LabConfig" /v BypassTPMCheck /t REG_DWORD /d 1 /f
+reg add "HKLM\\ZT\\Setup\\LabConfig" /v BypassSecureBootCheck /t REG_DWORD /d 1 /f
+reg unload HKLM\\ZT
+
+:: Doi ten may qua Registry 
 reg load HKLM\\ZTSYSTEM W:\\Windows\\System32\\config\\SYSTEM
 reg add "HKLM\\ZTSYSTEM\\ControlSet001\\Control\\ComputerName\\ComputerName" /v ComputerName /t REG_SZ /d {ten_may_chong_trung} /f
 reg add "HKLM\\ZTSYSTEM\\ControlSet001\\Control\\ComputerName\\ActiveComputerName" /v ComputerName /t REG_SZ /d {ten_may_chong_trung} /f
@@ -213,22 +219,11 @@ mkdir W:\\Windows\\Panther
 copy /Y "%%~dpWPATHunattend.xml" W:\\Windows\\Panther\\unattend.xml
 
 :: Chep SetupComplete vao Windows moi
-if exist "%%~dpWPATHSetupComplete.cmd" ( 
-    mkdir W:\\Windows\\Setup\\Scripts 
-    copy /Y "%%~dpWPATHSetupComplete.cmd" W:\\Windows\\Setup\\Scripts\\ 
-)
-if exist "%%~dpWPATHWiFi" (
-    mkdir W:\\Windows\\Setup\\Scripts\\WiFi
-    xcopy /E /Y /I "%%~dpWPATHWiFi" W:\\Windows\\Setup\\Scripts\\WiFi\\
-)
+if exist "%%~dpWPATHSetupComplete.cmd" ( mkdir W:\\Windows\\Setup\\Scripts & copy /Y "%%~dpWPATHSetupComplete.cmd" W:\\Windows\\Setup\\Scripts\\ )
+if exist "%%~dpWPATHWiFi" ( mkdir W:\\Windows\\Setup\\Scripts\\WiFi & xcopy /E /Y /I "%%~dpWPATHWiFi" W:\\Windows\\Setup\\Scripts\\WiFi\\ )
 
-:: =========================================================
 :: DON DEP O DIA LUU TRU - TU DONG XOA THU MUC CAI DAT
-:: =========================================================
-for %%D in (C D E F G H I J K L M N O P Q R S T U V W X Y Z) do (
-    if exist "%%D:\\ZT_Cloud_Install" rd /s /q "%%D:\\ZT_Cloud_Install"
-)
-:: =========================================================
+for %%D in (C D E F G H I J K L M N O P Q R S T U V W X Y Z) do ( if exist "%%D:\\ZT_Cloud_Install" rd /s /q "%%D:\\ZT_Cloud_Install" )
 
 wpeutil reboot
 "@
