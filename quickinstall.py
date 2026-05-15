@@ -250,6 +250,24 @@ if ($FoundWIM -eq "") {{
         }}
     }}
 }}
+# =============== TẢI WINRE TỪ CLOUD (FALLBACK CUỐI CÙNG) ===============
+if ($FoundWIM -eq "") {{
+    Write-Output "[PE-LOG] Khong tim thay WinRE noi bo. Dang tai tu kho luu tru Hugging Face..."
+    $CloudWinreUrl = "https://huggingface.co/datasets/tuantran1991/windows/resolve/main/Winre.wim"
+    $TempWinrePath = "C:\\ZT_Cloud_Install\\winre.wim"
+    
+    try {{
+        # Thiet lap giao thuc bao mat TLS 1.2 de tai tu Hugging Face
+        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+        Invoke-WebRequest -Uri $CloudWinreUrl -OutFile $TempWinrePath -TimeoutSec 600
+        if (Test-Path $TempWinrePath) {{
+            $FoundWIM = $TempWinrePath
+            Write-Output "[PE-LOG] Tai WinRE tu Cloud thanh cong!"
+        }}
+    }} catch {{
+        Write-Output "[PE-LOG] Loi khi tai WinRE tu Cloud: $($_.Exception.Message)"
+    }}
+}}
 
 if ($FoundWIM -eq "") {{
     Write-Output "=> FATAL ERROR: May tinh thieu file qua nang va khong the tu rut ruot!"
