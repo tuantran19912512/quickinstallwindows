@@ -12,6 +12,7 @@ import csv
 import threading
 import subprocess
 import random
+import webbrowser
 import tkinter as tk
 from tkinter import messagebox, filedialog
 import customtkinter as ctk
@@ -236,7 +237,7 @@ wpeutil reboot
     if ket_qua.returncode != 0: ham_ghi_log(f"Cảnh báo WinRE: {ket_qua.stderr.strip()}")
 
 # ==========================================
-# 5. ĐỘNG CƠ TẢI DỮ LIỆU ĐÁM MÂY (FIX TOÁN HỌC & BẢO MẬT)
+# 5. ĐỘNG CƠ TẢI DỮ LIỆU ĐÁM MÂY (CÓ CHUYỂN HƯỚNG TRÌNH DUYỆT)
 # ==========================================
 def truat_xuat_du_lieu_dam_may(ma_file_tai, duong_dan_luu_tru, ham_cap_nhat_giao_dien, ham_ghi_log, su_kien_huy):
     if not ma_file_tai:
@@ -262,57 +263,33 @@ def truat_xuat_du_lieu_dam_may(ma_file_tai, duong_dan_luu_tru, ham_cap_nhat_giao
                         if not khoi_du_lieu: break
                         tep_tin_nhan.write(khoi_du_lieu); dung_luong_da_tai += len(khoi_du_lieu)
                         if tong_kich_thuoc_file > 0: 
-                            # FIX ERROR DIVISION BY ZERO (Ép thời gian trôi qua luôn > 0.001)
                             thoi_gian_xu_ly = max(time.time() - thoi_gian_khoi_tao, 0.001)
                             phan_tram = (dung_luong_da_tai / tong_kich_thuoc_file) * 100
                             toc_do_giay = dung_luong_da_tai / thoi_gian_xu_ly
                             ham_cap_nhat_giao_dien(phan_tram, dung_luong_da_tai, tong_kich_thuoc_file, toc_do_giay)
             ham_ghi_log(f"Đang truyền tải tốc độ cao qua Khóa API số {thu_tu + 1}.")
-            return True
+            return "SUCCESS"
+            
         except urllib.error.HTTPError as loi_http:
-            if loi_http.code == 403: ham_ghi_log(f"Khóa {thu_tu + 1} (403): Quá tải hoặc ID trống rỗng.")
+            if loi_http.code == 403: ham_ghi_log(f"Khóa {thu_tu + 1} (403): Bị chặn/Quá tải giới hạn.")
             elif loi_http.code == 404: ham_ghi_log(f"Khóa {thu_tu + 1} (404): Không tìm thấy ID '{ma_file_tai}'.")
-            else: ham_ghi_log(f"Khóa {thu_tu + 1} lỗi kết nối.")
+            else: ham_ghi_log(f"Khóa {thu_tu + 1} lỗi kết nối HTTP.")
             continue
         except Exception as e: 
             ham_ghi_log(f"Khóa {thu_tu + 1} lỗi mạng: {str(e)}")
             continue
 
-    # KẾ HOẠCH B: CHỐNG CHÁY NẾU API CHẾT HẾT
-    ham_ghi_log("Toàn bộ API đều bận. Kích hoạt luồng tải Trực tiếp Không API...")
+    # KẾ HOẠCH B: ĐÁ LINK RA TRÌNH DUYỆT WEB
+    ham_ghi_log("Tất cả API đã kiệt sức. Tiến hành đẩy link ra trình duyệt web...")
+    link_tai_web = f"https://drive.google.com/uc?export=download&id={ma_file_tai}"
+    
     try:
-        link_du_phong = f"https://drive.google.com/uc?export=download&id={ma_file_tai}&confirm=t"
-        yeu_cau_dp = urllib.request.Request(link_du_phong, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'})
-        with urllib.request.urlopen(yeu_cau_dp, timeout=15) as cau_tra_loi_dp:
-            tong_kich_thuoc_file = int(cau_tra_loi_dp.getheader('Content-Length', 0))
-            with open(duong_dan_luu_tru, 'wb') as tep_tin_nhan:
-                dung_luong_da_tai = 0; thoi_gian_khoi_tao = time.time()
-                while True:
-                    if su_kien_huy.is_set(): return False
-                    khoi_du_lieu = cau_tra_loi_dp.read(1024 * 1024)
-                    if not khoi_du_lieu: break
-                    tep_tin_nhan.write(khoi_du_lieu); dung_luong_da_tai += len(khoi_du_lieu)
-                    if tong_kich_thuoc_file > 0: 
-                        # FIX ERROR DIVISION BY ZERO 
-                        thoi_gian_xu_ly = max(time.time() - thoi_gian_khoi_tao, 0.001)
-                        phan_tram = (dung_luong_da_tai / tong_kich_thuoc_file) * 100
-                        toc_do_giay = dung_luong_da_tai / thoi_gian_xu_ly
-                        ham_cap_nhat_giao_dien(phan_tram, dung_luong_da_tai, tong_kich_thuoc_file, toc_do_giay)
-        
-        # BẢO VỆ Ổ CỨNG: Kiểm tra xem có phải tải nhầm trang Web báo lỗi của Google không
-        if dung_luong_da_tai < 100 * 1024 * 1024: # File nhẹ hơn 100MB
-            ham_ghi_log("LỖI BẢO MẬT: File tải về quá nhẹ (dưới 100MB). Google đã chặn tải trực tiếp và trả về trang HTML báo lỗi!")
-            # Xóa file rác đó đi
-            try: os.remove(duong_dan_luu_tru)
-            except: pass
-            return False
-
-        ham_ghi_log("Tải thành công bằng luồng Dự Phòng!")
-        return True
+        webbrowser.open(link_tai_web)
+        ham_ghi_log("Đã mở link trên trình duyệt. Vui lòng tải thủ công.")
+        return "WEB_REDIRECT"
     except Exception as e:
-        ham_ghi_log(f"Luồng dự phòng thất bại: {str(e)}")
-
-    return False
+        ham_ghi_log(f"Không thể mở trình duyệt: {str(e)}")
+        return False
 
 # ==========================================
 # 6. GIAO DIỆN BẢNG ĐIỀU KHIỂN CHÍNH
@@ -417,7 +394,16 @@ class BangDieuKhienTrungTam(ctk.CTk):
             else:
                 self.in_nhat_ky_he_thong(f"Mở luồng tải dữ liệu đám mây: {nhan_ten_ban_cai}...")
                 ket_qua_tai = truat_xuat_du_lieu_dam_may(gia_tri_ma_file, vi_tri_luu_file_wim, self.lam_moi_giao_dien_tai, self.in_nhat_ky_he_thong, self.su_kien_huy_lenh)
-                if not ket_qua_tai: return self.khoi_phuc_trang_thai_goc("Tiến trình tải dữ liệu bị hủy do lỗi mạng hoặc file lỗi.")
+                
+                # NẾU TRẢ VỀ LÀ WEB_REDIRECT THÌ THÔNG BÁO VÀ DỪNG LẠI
+                if ket_qua_tai == "WEB_REDIRECT":
+                    # Xóa file rác 0KB do Python vừa tạo ra
+                    try: os.remove(vi_tri_luu_file_wim)
+                    except: pass
+                    messagebox.showinfo("Chuyển Hướng Trình Duyệt", "Các máy chủ API hiện đang quá tải.\n\nHệ thống đã mở link tải trực tiếp trên trình duyệt Web của bạn.\n\nSAU KHI TẢI XONG FILE, hãy mở lại Tool và chọn tính năng [Tải file wim từ ổ cứng/USB] để tiếp tục.")
+                    return self.khoi_phuc_trang_thai_goc("Đang chờ người dùng tải file thủ công...")
+                elif not ket_qua_tai: 
+                    return self.khoi_phuc_trang_thai_goc("Tiến trình tải dữ liệu bị hủy do lỗi mạng hoặc file lỗi.")
 
             if self.bien_an_toan_test.get():
                 messagebox.showinfo("Báo Cáo", f"Đã lưu file an toàn tại: {vi_tri_luu_file_wim}\nChế độ Test: Máy không bị Format."); return self.khoi_phuc_trang_thai_goc("Kiểm thử xong.")
