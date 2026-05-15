@@ -237,7 +237,7 @@ wpeutil reboot
     if ket_qua.returncode != 0: ham_ghi_log(f"Cảnh báo WinRE: {ket_qua.stderr.strip()}")
 
 # ==========================================
-# 5. ĐỘNG CƠ TẢI DỮ LIỆU ĐÁM MÂY (CÓ CHUYỂN HƯỚNG TRÌNH DUYỆT)
+# 5. ĐỘNG CƠ TẢI DỮ LIỆU ĐÁM MÂY
 # ==========================================
 def truat_xuat_du_lieu_dam_may(ma_file_tai, duong_dan_luu_tru, ham_cap_nhat_giao_dien, ham_ghi_log, su_kien_huy):
     if not ma_file_tai:
@@ -279,7 +279,6 @@ def truat_xuat_du_lieu_dam_may(ma_file_tai, duong_dan_luu_tru, ham_cap_nhat_giao
             ham_ghi_log(f"Khóa {thu_tu + 1} lỗi mạng: {str(e)}")
             continue
 
-    # KẾ HOẠCH B: ĐÁ LINK RA TRÌNH DUYỆT WEB
     ham_ghi_log("Tất cả API đã kiệt sức. Tiến hành đẩy link ra trình duyệt web...")
     link_tai_web = f"https://drive.google.com/uc?export=download&id={ma_file_tai}"
     
@@ -315,6 +314,10 @@ class BangDieuKhienTrungTam(ctk.CTk):
 
         self.khung_danh_sach_os = ctk.CTkScrollableFrame(self, label_text=" DANH MỤC BẢN CÀI ĐẶT CÓ SẴN "); self.khung_danh_sach_os.grid(row=2, column=0, padx=20, pady=10, sticky="nsew")
         
+        # NÚT CHỌN FILE LOCAL MỚI BỔ SUNG
+        self.nut_cai_local = ctk.CTkButton(self.khung_danh_sach_os, text="📁 CHỌN FILE WIM TỪ Ổ CỨNG / USB", font=("Arial", 14, "bold"), fg_color="#047857", hover_color="#065F46", command=self.kich_hoat_cai_dat_local)
+        self.nut_cai_local.pack(fill="x", pady=(5, 15), padx=5)
+
         self.hop_chua_nhat_ky = ctk.CTkTextbox(self, height=100, font=("Consolas", 12), fg_color="#0F172A", text_color="#38BDF8"); self.hop_chua_nhat_ky.grid(row=3, column=0, padx=20, pady=5, sticky="ew")
         self.hop_chua_nhat_ky.insert("0.0", "Hệ thống lõi đã khởi tạo thành công.\n"); self.hop_chua_nhat_ky.configure(state="disabled")
 
@@ -370,37 +373,44 @@ class BangDieuKhienTrungTam(ctk.CTk):
     def kich_hoat_lenh_huy(self): 
         self.su_kien_huy_lenh.set(); self.nut_huy_bo.configure(state="disabled")
 
+    def kich_hoat_cai_dat_local(self):
+        if self.co_the_hoat_dong: return
+        duong_dan_file = filedialog.askopenfilename(filetypes=[("Tập tin Windows Image", "*.wim")])
+        if not duong_dan_file: return
+        if not self.bien_an_toan_test.get():
+            if not messagebox.askyesno("Xác Nhận Nguy Hiểm", "Hành động này sẽ XÓA SẠCH ổ C của máy tính. Chắc chắn tiếp tục?"): return
+        
+        self.co_the_hoat_dong = True; self.su_kien_huy_lenh.clear(); self.nut_huy_bo.configure(state="normal")
+        threading.Thread(target=self.luong_dieu_phoi_chinh, args=("Cài đặt từ Local", None, duong_dan_file), daemon=True).start()
+
     def khoi_tao_tien_trinh(self, nhan_ten_ban_cai, gia_tri_ma_file):
         if self.co_the_hoat_dong: return
         if not self.bien_an_toan_test.get():
             if not messagebox.askyesno("Xác Nhận Nguy Hiểm", "Hành động này sẽ XÓA SẠCH ổ C của máy tính. Chắc chắn tiếp tục?"): return
         self.co_the_hoat_dong = True; self.su_kien_huy_lenh.clear(); self.nut_huy_bo.configure(state="normal")
-        threading.Thread(target=self.luong_dieu_phoi_chinh, args=(nhan_ten_ban_cai, gia_tri_ma_file), daemon=True).start()
+        threading.Thread(target=self.luong_dieu_phoi_chinh, args=(nhan_ten_ban_cai, gia_tri_ma_file, None), daemon=True).start()
 
-    def luong_dieu_phoi_chinh(self, nhan_ten_ban_cai, gia_tri_ma_file):
+    def luong_dieu_phoi_chinh(self, nhan_ten_ban_cai, gia_tri_ma_file, duong_dan_local=None):
         try:
-            toc_do_mang_hien_tai = do_bang_thong_mang(self.in_nhat_ky_he_thong)
-            duong_dan_usb_noi_bo = None
-            if toc_do_mang_hien_tai < 1.5:
-                if messagebox.askyesno("Báo Cáo Đường Truyền", f"Tốc độ mạng chậm (~{toc_do_mang_hien_tai:.1f}MB/s). Chọn wim từ ổ cứng/USB?"):
-                    duong_dan_usb_noi_bo = filedialog.askopenfilename(filetypes=[("Tập tin Windows Image", "*.wim")])
-
             go_bo_bitlocker(self.in_nhat_ky_he_thong)
             o_dia_an_toan = tim_o_dia_luu_tru_an_toan(); thu_muc_chua_anh_wim = f"{o_dia_an_toan}:\\ZT_Cloud_Install"; os.makedirs(thu_muc_chua_anh_wim, exist_ok=True); vi_tri_luu_file_wim = os.path.join(thu_muc_chua_anh_wim, "install.wim")
             sao_luu_du_lieu_he_thong(thu_muc_chua_anh_wim, self.bien_chon_driver.get(), self.bien_chon_wifi.get(), self.in_nhat_ky_he_thong)
 
-            if duong_dan_usb_noi_bo:
-                self.in_nhat_ky_he_thong("Đang sao chép tập tin WIM cục bộ..."); shutil.copy2(duong_dan_usb_noi_bo, vi_tri_luu_file_wim)
+            if duong_dan_local:
+                self.in_nhat_ky_he_thong(f"Đang tiến hành sao chép tập tin WIM vào ổ cứng: {duong_dan_local}")
+                self.nhan_chi_so_tai.configure(text="Đang chép file nội bộ. Vui lòng đợi quá trình hoàn tất...")
+                self.update()
+                shutil.copy2(duong_dan_local, vi_tri_luu_file_wim)
+                self.in_nhat_ky_he_thong("Đã chép file xong.")
             else:
+                do_bang_thong_mang(self.in_nhat_ky_he_thong)
                 self.in_nhat_ky_he_thong(f"Mở luồng tải dữ liệu đám mây: {nhan_ten_ban_cai}...")
                 ket_qua_tai = truat_xuat_du_lieu_dam_may(gia_tri_ma_file, vi_tri_luu_file_wim, self.lam_moi_giao_dien_tai, self.in_nhat_ky_he_thong, self.su_kien_huy_lenh)
                 
-                # NẾU TRẢ VỀ LÀ WEB_REDIRECT THÌ THÔNG BÁO VÀ DỪNG LẠI
                 if ket_qua_tai == "WEB_REDIRECT":
-                    # Xóa file rác 0KB do Python vừa tạo ra
                     try: os.remove(vi_tri_luu_file_wim)
                     except: pass
-                    messagebox.showinfo("Chuyển Hướng Trình Duyệt", "Các máy chủ API hiện đang quá tải.\n\nHệ thống đã mở link tải trực tiếp trên trình duyệt Web của bạn.\n\nSAU KHI TẢI XONG FILE, hãy mở lại Tool và chọn tính năng [Tải file wim từ ổ cứng/USB] để tiếp tục.")
+                    messagebox.showinfo("Chuyển Hướng Trình Duyệt", "Các máy chủ API hiện đang quá tải.\n\nHệ thống đã mở link tải trực tiếp trên trình duyệt Web.\n\nSAU KHI TẢI XONG FILE, hãy mở lại Tool và chọn tính năng [CHỌN FILE WIM TỪ Ổ CỨNG / USB] màu xanh lá để tiếp tục cài đặt.")
                     return self.khoi_phuc_trang_thai_goc("Đang chờ người dùng tải file thủ công...")
                 elif not ket_qua_tai: 
                     return self.khoi_phuc_trang_thai_goc("Tiến trình tải dữ liệu bị hủy do lỗi mạng hoặc file lỗi.")
