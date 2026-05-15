@@ -476,7 +476,7 @@ class BangDieuKhienTrungTam(ctk.CTk):
         self.mang_luu_nut_bam.append(self.nut_cai_local)
 
         self.hop_chua_nhat_ky = ctk.CTkTextbox(self, height=180, font=("Consolas", 12), fg_color="#0F172A", text_color="#38BDF8"); self.hop_chua_nhat_ky.grid(row=3, column=0, padx=20, pady=5, sticky="ew")
-        self.hop_chua_nhat_ky.insert("0.0", "Hệ thống lõi 30 đã khởi tạo thành công.\n"); self.hop_chua_nhat_ky.configure(state="disabled")
+        self.hop_chua_nhat_ky.insert("0.0", "Hệ thống lõi 30.1 đã khởi tạo thành công.\n"); self.hop_chua_nhat_ky.configure(state="disabled")
 
         self.khung_phan_cuoi = ctk.CTkFrame(self, fg_color="transparent"); self.khung_phan_cuoi.grid(row=4, column=0, padx=20, pady=15, sticky="ew"); self.khung_phan_cuoi.grid_columnconfigure(0, weight=1)
         self.thanh_bar_tien_do = ctk.CTkProgressBar(self.khung_phan_cuoi, height=12); self.thanh_bar_tien_do.grid(row=0, column=0, padx=(0, 20), sticky="ew"); self.thanh_bar_tien_do.set(0)
