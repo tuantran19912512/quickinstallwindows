@@ -237,23 +237,54 @@ wpeutil reboot
     if ket_qua.returncode != 0: ham_ghi_log(f"Cảnh báo WinRE: {ket_qua.stderr.strip()}")
 
 # ==========================================
-# 5. ĐỘNG CƠ TẢI DỮ LIỆU ĐÁM MÂY (VIEW REDIRECT FIX)
+# 5. ĐỘNG CƠ TẢI DỮ LIỆU ĐÁM MÂY (AUTO-FALLBACK LINK RAW)
 # ==========================================
-def truat_xuat_du_lieu_dam_may(ma_file_tai, duong_dan_luu_tru, ham_cap_nhat_giao_dien, ham_ghi_log, su_kien_huy):
-    if not ma_file_tai:
-        ham_ghi_log("LỖI: Mã ID trống! Hãy kiểm tra lại cấu trúc file CSV.")
-        return False
-
-    for thu_tu, khoa_bao_mat_b64 in enumerate(DANH_SACH_KHOA_API):
-        if su_kien_huy.is_set(): return False
-        try: khoa_api_giai_ma = base64.b64decode(khoa_bao_mat_b64).decode('utf-8')
-        except: continue
+def truat_xuat_du_lieu_dam_may(ma_file_tai, link_raw_du_phong, duong_dan_luu_tru, ham_cap_nhat_giao_dien, ham_ghi_log, su_kien_huy):
+    
+    # KẾ HOẠCH A: THỬ TẢI QUA 5 KHÓA API CỦA GOOGLE DRIVE
+    api_thanh_cong = False
+    if ma_file_tai and not ma_file_tai.startswith("http"):
+        for thu_tu, khoa_bao_mat_b64 in enumerate(DANH_SACH_KHOA_API):
+            if su_kien_huy.is_set(): return False
+            try: khoa_api_giai_ma = base64.b64decode(khoa_bao_mat_b64).decode('utf-8')
+            except: continue
+                
+            duong_dan_truy_xuat = f"https://www.googleapis.com/drive/v3/files/{ma_file_tai}?alt=media&key={khoa_api_giai_ma}&acknowledgeAbuse=true"
+            yeu_cau_ket_noi = urllib.request.Request(duong_dan_truy_xuat, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'})
             
-        duong_dan_truy_xuat = f"https://www.googleapis.com/drive/v3/files/{ma_file_tai}?alt=media&key={khoa_api_giai_ma}&acknowledgeAbuse=true"
-        yeu_cau_ket_noi = urllib.request.Request(duong_dan_truy_xuat, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'})
-        
+            try:
+                with urllib.request.urlopen(yeu_cau_ket_noi, timeout=15) as cau_tra_loi:
+                    tong_kich_thuoc_file = int(cau_tra_loi.getheader('Content-Length', 0))
+                    with open(duong_dan_luu_tru, 'wb') as tep_tin_nhan:
+                        dung_luong_da_tai = 0; thoi_gian_khoi_tao = time.time()
+                        while True:
+                            if su_kien_huy.is_set(): return False
+                            khoi_du_lieu = cau_tra_loi.read(1024 * 1024)
+                            if not khoi_du_lieu: break
+                            tep_tin_nhan.write(khoi_du_lieu); dung_luong_da_tai += len(khoi_du_lieu)
+                            if tong_kich_thuoc_file > 0: 
+                                thoi_gian_xu_ly = max(time.time() - thoi_gian_khoi_tao, 0.001)
+                                phan_tram = (dung_luong_da_tai / tong_kich_thuoc_file) * 100
+                                toc_do_giay = dung_luong_da_tai / thoi_gian_xu_ly
+                                ham_cap_nhat_giao_dien(phan_tram, dung_luong_da_tai, tong_kich_thuoc_file, toc_do_giay)
+                ham_ghi_log(f"Đang truyền tải tốc độ cao qua Khóa API Google số {thu_tu + 1}.")
+                return "SUCCESS"
+                
+            except urllib.error.HTTPError as loi_http:
+                if loi_http.code == 403: ham_ghi_log(f"Khóa {thu_tu + 1} (403): Bị chặn/Quá tải giới hạn.")
+                elif loi_http.code == 404: ham_ghi_log(f"Khóa {thu_tu + 1} (404): Không tìm thấy ID '{ma_file_tai}'.")
+                else: ham_ghi_log(f"Khóa {thu_tu + 1} lỗi kết nối HTTP.")
+                continue
+            except Exception as e: 
+                ham_ghi_log(f"Khóa {thu_tu + 1} lỗi mạng: {str(e)}")
+                continue
+
+    # KẾ HOẠCH B: NẾU GOOGLE SẬP (HOẶC KHÔNG DÙNG GOOGLE), CHUYỂN SANG LINK RAW (HUGGING FACE)
+    if link_raw_du_phong and link_raw_du_phong.startswith("http"):
+        ham_ghi_log("Hệ thống chuyển hướng tự động: Bắt đầu tải qua Link Raw (Hugging Face / Direct Server)...")
         try:
-            with urllib.request.urlopen(yeu_cau_ket_noi, timeout=15) as cau_tra_loi:
+            yeu_cau = urllib.request.Request(link_raw_du_phong, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'})
+            with urllib.request.urlopen(yeu_cau, timeout=15) as cau_tra_loi:
                 tong_kich_thuoc_file = int(cau_tra_loi.getheader('Content-Length', 0))
                 with open(duong_dan_luu_tru, 'wb') as tep_tin_nhan:
                     dung_luong_da_tai = 0; thoi_gian_khoi_tao = time.time()
@@ -267,29 +298,25 @@ def truat_xuat_du_lieu_dam_may(ma_file_tai, duong_dan_luu_tru, ham_cap_nhat_giao
                             phan_tram = (dung_luong_da_tai / tong_kich_thuoc_file) * 100
                             toc_do_giay = dung_luong_da_tai / thoi_gian_xu_ly
                             ham_cap_nhat_giao_dien(phan_tram, dung_luong_da_tai, tong_kich_thuoc_file, toc_do_giay)
-            ham_ghi_log(f"Đang truyền tải tốc độ cao qua Khóa API số {thu_tu + 1}.")
+            ham_ghi_log("Tải file từ Link Raw thành công 100%!")
             return "SUCCESS"
-            
-        except urllib.error.HTTPError as loi_http:
-            if loi_http.code == 403: ham_ghi_log(f"Khóa {thu_tu + 1} (403): Bị chặn/Quá tải giới hạn.")
-            elif loi_http.code == 404: ham_ghi_log(f"Khóa {thu_tu + 1} (404): Không tìm thấy ID '{ma_file_tai}'.")
-            else: ham_ghi_log(f"Khóa {thu_tu + 1} lỗi kết nối HTTP.")
-            continue
-        except Exception as e: 
-            ham_ghi_log(f"Khóa {thu_tu + 1} lỗi mạng: {str(e)}")
-            continue
+        except Exception as e:
+            ham_ghi_log(f"Lỗi khi tải Link Raw: {str(e)}")
 
-    # FIX LINK TRÌNH DUYỆT TẠI ĐÂY: Dùng link View gốc của Google Drive
-    ham_ghi_log("Tất cả API đã kiệt sức. Tiến hành đẩy link ra trình duyệt web...")
-    link_tai_web = f"https://drive.google.com/file/d/{ma_file_tai}/view"
-    
-    try:
-        webbrowser.open(link_tai_web)
-        ham_ghi_log("Đã mở giao diện Google Drive trên trình duyệt. Vui lòng bấm nút Tải xuống.")
-        return "WEB_REDIRECT"
-    except Exception as e:
-        ham_ghi_log(f"Không thể mở trình duyệt: {str(e)}")
-        return False
+    # KẾ HOẠCH C: NẾU LINK RAW KHÔNG CÓ HOẶC CŨNG LỖI MÀ CÓ ID GOOGLE, ĐÁ RA TRÌNH DUYỆT
+    if ma_file_tai and not ma_file_tai.startswith("http"):
+        ham_ghi_log("Tất cả luồng tải ngầm đã kiệt sức. Đẩy link ra trình duyệt web...")
+        link_tai_web = f"https://drive.google.com/file/d/{ma_file_tai}/view"
+        try:
+            webbrowser.open(link_tai_web)
+            ham_ghi_log("Đã mở giao diện Google Drive trên trình duyệt. Vui lòng bấm nút Tải xuống.")
+            return "WEB_REDIRECT"
+        except Exception as e:
+            ham_ghi_log(f"Không thể mở trình duyệt: {str(e)}")
+            return False
+
+    ham_ghi_log("LỖI: Không có luồng tải nào hoạt động. Vui lòng kiểm tra lại file CSV.")
+    return False
 
 # ==========================================
 # 6. GIAO DIỆN BẢNG ĐIỀU KHIỂN CHÍNH
@@ -342,22 +369,26 @@ class BangDieuKhienTrungTam(ctk.CTk):
                 cac_cot_tieu_de = [c.strip() for c in trinh_doc_csv.fieldnames if c]
                 
                 khoa_ten_file = next((cot for cot in cac_cot_tieu_de if 'name' in cot.lower() or 'tên' in cot.lower()), None)
-                khoa_ma_file = next((cot for cot in cac_cot_tieu_de if 'id' in cot.lower() or 'link' in cot.lower()), None)
+                khoa_ma_file = next((cot for cot in cac_cot_tieu_de if 'id' in cot.lower() or 'link' in cot.lower() and 'raw' not in cot.lower()), None)
+                khoa_link_raw = next((cot for cot in cac_cot_tieu_de if 'linkraw' in cot.lower().replace(" ", "")), None)
                 
-                if not khoa_ten_file or not khoa_ma_file:
+                if not khoa_ten_file:
                     self.in_nhat_ky_he_thong(f"Lỗi CSV. Các cột tìm thấy: {cac_cot_tieu_de}")
                     return
 
                 so_luong_file = 0
                 for hang_du_lieu in trinh_doc_csv:
                     ten_hien_thi = str(hang_du_lieu.get(khoa_ten_file, '')).strip()
-                    chuoi_link_goc = str(hang_du_lieu.get(khoa_ma_file, '')).strip()
+                    chuoi_link_goc = str(hang_du_lieu.get(khoa_ma_file, '')).strip() if khoa_ma_file else ""
+                    chuoi_link_raw = str(hang_du_lieu.get(khoa_link_raw, '')).strip() if khoa_link_raw else ""
                     
+                    ma_dinh_danh_gg = ""
                     tim_id = re.search(r'[-\w]{25,}', chuoi_link_goc)
-                    ma_dinh_danh = tim_id.group(0) if tim_id else ''
+                    if tim_id:
+                        ma_dinh_danh_gg = tim_id.group(0)
                     
-                    if ten_hien_thi and ".wim" in ten_hien_thi.lower() and ma_dinh_danh:
-                        self.sinh_nut_cai_dat(ten_hien_thi, ma_dinh_danh)
+                    if ten_hien_thi and ".wim" in ten_hien_thi.lower() and (ma_dinh_danh_gg or chuoi_link_raw):
+                        self.sinh_nut_cai_dat(ten_hien_thi, ma_dinh_danh_gg, chuoi_link_raw)
                         so_luong_file += 1
                         
                 self.nhan_trang_thai_kho.configure(text=f"✅ Đã giải mã cấu trúc thành công {so_luong_file} bản cài", text_color="#10B981")
@@ -367,8 +398,8 @@ class BangDieuKhienTrungTam(ctk.CTk):
                 
         threading.Thread(target=luong_xu_ly_mang, daemon=True).start()
 
-    def sinh_nut_cai_dat(self, nhan_ten_ban_cai, gia_tri_ma_file):
-        ctk.CTkButton(self.khung_danh_sach_os, text=f"📥 TẢI VÀ ÁP DỤNG: {nhan_ten_ban_cai}", font=("Arial", 13, "bold"), fg_color="#1E293B", anchor="w", command=lambda: self.khoi_tao_tien_trinh(nhan_ten_ban_cai, gia_tri_ma_file)).pack(fill="x", pady=2, padx=5)
+    def sinh_nut_cai_dat(self, nhan_ten_ban_cai, gia_tri_ma_file, gia_tri_link_raw):
+        ctk.CTkButton(self.khung_danh_sach_os, text=f"📥 TẢI VÀ ÁP DỤNG: {nhan_ten_ban_cai}", font=("Arial", 13, "bold"), fg_color="#1E293B", anchor="w", command=lambda: self.khoi_tao_tien_trinh(nhan_ten_ban_cai, gia_tri_ma_file, gia_tri_link_raw)).pack(fill="x", pady=2, padx=5)
 
     def kich_hoat_lenh_huy(self): 
         self.su_kien_huy_lenh.set(); self.nut_huy_bo.configure(state="disabled")
@@ -381,16 +412,16 @@ class BangDieuKhienTrungTam(ctk.CTk):
             if not messagebox.askyesno("Xác Nhận Nguy Hiểm", "Hành động này sẽ XÓA SẠCH ổ C của máy tính. Chắc chắn tiếp tục?"): return
         
         self.co_the_hoat_dong = True; self.su_kien_huy_lenh.clear(); self.nut_huy_bo.configure(state="normal")
-        threading.Thread(target=self.luong_dieu_phoi_chinh, args=("Cài đặt từ Local", None, duong_dan_file), daemon=True).start()
+        threading.Thread(target=self.luong_dieu_phoi_chinh, args=("Cài đặt từ Local", None, None, duong_dan_file), daemon=True).start()
 
-    def khoi_tao_tien_trinh(self, nhan_ten_ban_cai, gia_tri_ma_file):
+    def khoi_tao_tien_trinh(self, nhan_ten_ban_cai, gia_tri_ma_file, gia_tri_link_raw):
         if self.co_the_hoat_dong: return
         if not self.bien_an_toan_test.get():
             if not messagebox.askyesno("Xác Nhận Nguy Hiểm", "Hành động này sẽ XÓA SẠCH ổ C của máy tính. Chắc chắn tiếp tục?"): return
         self.co_the_hoat_dong = True; self.su_kien_huy_lenh.clear(); self.nut_huy_bo.configure(state="normal")
-        threading.Thread(target=self.luong_dieu_phoi_chinh, args=(nhan_ten_ban_cai, gia_tri_ma_file, None), daemon=True).start()
+        threading.Thread(target=self.luong_dieu_phoi_chinh, args=(nhan_ten_ban_cai, gia_tri_ma_file, gia_tri_link_raw, None), daemon=True).start()
 
-    def luong_dieu_phoi_chinh(self, nhan_ten_ban_cai, gia_tri_ma_file, duong_dan_local=None):
+    def luong_dieu_phoi_chinh(self, nhan_ten_ban_cai, gia_tri_ma_file, gia_tri_link_raw, duong_dan_local=None):
         try:
             go_bo_bitlocker(self.in_nhat_ky_he_thong)
             o_dia_an_toan = tim_o_dia_luu_tru_an_toan(); thu_muc_chua_anh_wim = f"{o_dia_an_toan}:\\ZT_Cloud_Install"; os.makedirs(thu_muc_chua_anh_wim, exist_ok=True); vi_tri_luu_file_wim = os.path.join(thu_muc_chua_anh_wim, "install.wim")
@@ -405,12 +436,12 @@ class BangDieuKhienTrungTam(ctk.CTk):
             else:
                 do_bang_thong_mang(self.in_nhat_ky_he_thong)
                 self.in_nhat_ky_he_thong(f"Mở luồng tải dữ liệu đám mây: {nhan_ten_ban_cai}...")
-                ket_qua_tai = truat_xuat_du_lieu_dam_may(gia_tri_ma_file, vi_tri_luu_file_wim, self.lam_moi_giao_dien_tai, self.in_nhat_ky_he_thong, self.su_kien_huy_lenh)
+                ket_qua_tai = truat_xuat_du_lieu_dam_may(gia_tri_ma_file, gia_tri_link_raw, vi_tri_luu_file_wim, self.lam_moi_giao_dien_tai, self.in_nhat_ky_he_thong, self.su_kien_huy_lenh)
                 
                 if ket_qua_tai == "WEB_REDIRECT":
                     try: os.remove(vi_tri_luu_file_wim)
                     except: pass
-                    messagebox.showinfo("Chuyển Hướng Trình Duyệt", "Các máy chủ API hiện đang quá tải.\n\nHệ thống đã mở link Drive trên trình duyệt Web. Vui lòng bấm [Tải xuống] thủ công.\n\nSAU KHI TẢI XONG FILE, hãy mở lại Tool và chọn tính năng [CHỌN FILE WIM TỪ Ổ CỨNG / USB] màu xanh lá để tiếp tục cài đặt.")
+                    messagebox.showinfo("Chuyển Hướng Trình Duyệt", "Các máy chủ tải ngầm đều bận hoặc khóa.\n\nHệ thống đã tự động mở Link phụ trên trình duyệt Web. Vui lòng tải thủ công.\n\nSAU KHI TẢI XONG FILE, hãy mở lại Tool và chọn tính năng [CHỌN FILE WIM TỪ Ổ CỨNG / USB] màu xanh lá để tiếp tục cài đặt.")
                     return self.khoi_phuc_trang_thai_goc("Đang chờ người dùng tải file thủ công...")
                 elif not ket_qua_tai: 
                     return self.khoi_phuc_trang_thai_goc("Tiến trình tải dữ liệu bị hủy do lỗi mạng hoặc file lỗi.")
