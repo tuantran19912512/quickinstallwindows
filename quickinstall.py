@@ -151,7 +151,7 @@ def sao_luu_du_lieu_he_thong(thu_muc_dich, lua_chon_driver, lua_chon_wifi, ham_g
             subprocess.run(["powershell", "-Command", lenh_sao_luu_chon_loc], creationflags=subprocess.CREATE_NO_WINDOW)
 
 # ==========================================
-# 4. LÕI TIÊM WINRE (OFFLINE REGISTRY & BYPASS TPM)
+# 4. LÕI TIÊM WINRE (V26.9 - FORCE BOOT CHỐNG TRÀN PHÂN VÙNG)
 # ==========================================
 def tiem_kich_ban_winre(o_dia_luu_wim, ham_ghi_log):
     chuoi_ngau_nhien = ''.join(random.choices(string.ascii_uppercase + string.digits, k=5))
@@ -173,27 +173,47 @@ def tiem_kich_ban_winre(o_dia_luu_wim, ham_ghi_log):
     os.makedirs(thu_muc_cai_dat, exist_ok=True)
     with open(f"{thu_muc_cai_dat}\\unattend.xml", "w", encoding="utf-8") as tep_xml: tep_xml.write(noi_dung_unattend)
     
+    # KỊCH BẢN POWERSHELL HOÀN TOÀN MỚI
     ma_nguon_ps = f"""
-$ErrorActionPreference = 'SilentlyContinue'
-$KiTuHeThong = [System.IO.Path]::GetPathRoot($env:windir).Substring(0,1)
-$ThongTinPhanVung = Get-Partition -DriveLetter $KiTuHeThong
-$ThuTuODia = $ThongTinPhanVung.DiskNumber
-$ThuTuPhanVung = $ThongTinPhanVung.PartitionNumber
+    $ErrorActionPreference = 'Continue'
+    try {{
+        Write-Output "Đang vô hiệu hóa Fast Startup..."
+        powercfg /h off
+        
+        Write-Output "Đang ngắt kết nối WinRE hiện tại..."
+        reagentc.exe /disable
+        Start-Sleep -Seconds 2
 
-$DuongDanWinRE = "C:\\Windows\\System32\\Recovery\\winre.wim"
-$ThuMucGiaoTiep = "C:\\MountRE"
-$WinRECopy = "C:\\winre_xu_ly.wim"
+        $SourceWIM = "C:\\Windows\\System32\\Recovery\\winre.wim"
+        if (-not (Test-Path $SourceWIM)) {{ $SourceWIM = "C:\\Recovery\\WindowsRE\\winre.wim" }}
+        if (-not (Test-Path $SourceWIM)) {{
+            Write-Output "Đang quét sâu để tìm winre.wim..."
+            $SourceWIM = (Get-ChildItem -Path C:\\ -Filter "winre.wim" -Recurse -ErrorAction SilentlyContinue -Force | Select-Object -First 1).FullName
+        }}
+        if (-not $SourceWIM) {{ Throw "Tuyệt đối không tìm thấy winre.wim trên máy khách!" }}
 
-reagentc.exe /enable; Start-Sleep -Seconds 2; reagentc.exe /disable; Start-Sleep -Seconds 2
+        $KiTuHeThong = [System.IO.Path]::GetPathRoot($env:windir).Substring(0,1)
+        $ThongTinPhanVung = Get-Partition -DriveLetter $KiTuHeThong
+        $ThuTuODia = $ThongTinPhanVung.DiskNumber
+        $ThuTuPhanVung = $ThongTinPhanVung.PartitionNumber
 
-if (Test-Path $ThuMucGiaoTiep) {{ dism.exe /Unmount-Image /MountDir:$ThuMucGiaoTiep /Discard; Remove-Item $ThuMucGiaoTiep -Recurse -Force }}
-New-Item -ItemType Directory -Force -Path $ThuMucGiaoTiep
+        $WorkDir = "C:\\MountRE"
+        $TempWIM = "C:\\winre_temp.wim"
 
-Copy-Item $DuongDanWinRE $WinRECopy -Force
-Set-ItemProperty $WinRECopy IsReadOnly $false
-dism.exe /Mount-Image /ImageFile:$WinRECopy /Index:1 /MountDir:$ThuMucGiaoTiep
+        if (Test-Path $WorkDir) {{ 
+            dism.exe /Unmount-Image /MountDir:$WorkDir /Discard | Out-Null
+            Remove-Item $WorkDir -Recurse -Force 
+        }}
+        New-Item -ItemType Directory -Force -Path $WorkDir | Out-Null
 
-$KichBanXoaVaCai = @"
+        cmd.exe /c "attrib -h -s -r `"$SourceWIM`""
+        Copy-Item $SourceWIM $TempWIM -Force
+        cmd.exe /c "attrib -h -s -r `"$TempWIM`""
+
+        Write-Output "Bắt đầu Mount WIM..."
+        dism.exe /Mount-Image /ImageFile:$TempWIM /Index:1 /MountDir:$WorkDir | Out-Null
+
+        $KichBanXoaVaCai = @"
 @echo off
 for %%D in (C D E F G H I J K L M N O P Q R S T U V W X Y Z) do (if exist "%%D:\\ZT_Cloud_Install\\install.wim" set "WPATH=%%D:\\ZT_Cloud_Install\\install.wim")
 (echo select disk $ThuTuODia & echo select partition $ThuTuPhanVung & echo assign letter=W & echo format quick fs=ntfs label="Windows") | diskpart
@@ -221,27 +241,51 @@ if exist "%%~dpWPATHWiFi" ( mkdir W:\\Windows\\Setup\\Scripts\\WiFi & xcopy /E /
 wpeutil reboot
 "@
 
-    $KichBanXoaVaCai | Out-File "$ThuMucGiaoTiep\\Windows\\System32\\LenhRE.cmd" -Encoding oem
-    '[LaunchApps]' + [char]13 + [char]10 + 'X:\\Windows\\System32\\LenhRE.cmd' | Out-File "$ThuMucGiaoTiep\\Windows\\System32\\winpeshl.ini" -Encoding ascii
-    
-    dism.exe /Unmount-Image /MountDir:$ThuMucGiaoTiep /Commit
-    cmd.exe /c "attrib -h -s -r `"$DuongDanWinRE`""
-    Copy-Item $WinRECopy $DuongDanWinRE -Force
-    Remove-Item $WinRECopy -Force
-    reagentc.exe /setreimage /path C:\\Windows\\System32\\Recovery
-    reagentc.exe /enable; Start-Sleep -Seconds 2; reagentc.exe /boottore
-"""
+        Write-Output "Đang nạp kịch bản vào WIM..."
+        $KichBanXoaVaCai | Out-File "$WorkDir\\Windows\\System32\\LenhRE.cmd" -Encoding oem
+        $WinPeShl = "[LaunchApps]`r`nX:\\Windows\\System32\\LenhRE.cmd"
+        [System.IO.File]::WriteAllText("$WorkDir\\Windows\\System32\\winpeshl.ini", $WinPeShl)
+
+        Write-Output "Đang đóng gói WIM (Commit)..."
+        dism.exe /Unmount-Image /MountDir:$WorkDir /Commit | Out-Null
+
+        # MẸO VƯỢT RÀO: ÉP LƯU TRỮ WIM Ở Ổ C ĐỂ KHÔNG BAO GIỜ BỊ BÁO TRÀN PHÂN VÙNG ẨN
+        $ReDest = "C:\\Recovery\\WindowsRE"
+        if (-not (Test-Path $ReDest)) {{ New-Item -ItemType Directory -Force -Path $ReDest | Out-Null }}
+        Copy-Item $TempWIM "$ReDest\\winre.wim" -Force
+        cmd.exe /c "attrib -h -s -r `"$ReDest\\winre.wim`""
+        Remove-Item $TempWIM -Force
+
+        Write-Output "Kích hoạt WinRE trực tiếp từ ổ C..."
+        reagentc.exe /setreimage /path $ReDest | Out-Null
+        reagentc.exe /enable | Out-Null
+        Start-Sleep -Seconds 2
+        
+        $CheckBoot = reagentc.exe /boottore
+        if ($LASTEXITCODE -ne 0) {{ Throw "Lệnh ép khởi động WinRE (boottore) bị Windows từ chối!" }}
+        
+        Write-Output "WINRE_SUCCESS"
+    }} catch {{
+        Write-Output "LỖI WINRE: $($_.Exception.Message)"
+    }}
+    """
     
     with open(f"{thu_muc_cai_dat}\\config.ps1", "w", encoding="utf-8") as tep_ps1: tep_ps1.write(ma_nguon_ps)
     ket_qua = subprocess.run(["powershell", "-ExecutionPolicy", "Bypass", "-File", f"{thu_muc_cai_dat}\\config.ps1"], capture_output=True, text=True, creationflags=subprocess.CREATE_NO_WINDOW)
-    if ket_qua.returncode != 0: ham_ghi_log(f"Cảnh báo WinRE: {ket_qua.stderr.strip()}")
+    
+    # Bắt lỗi rõ ràng và ném ra cho Python xử lý thay vì im lặng
+    if "LỖI WINRE:" in ket_qua.stdout:
+        loi_thuc_te = re.search(r'LỖI WINRE:(.*)', ket_qua.stdout)
+        thong_diep = loi_thuc_te.group(1).strip() if loi_thuc_te else ket_qua.stdout.strip()
+        raise Exception(f"Thiết lập WinRE thất bại: {thong_diep}")
+    elif "WINRE_SUCCESS" not in ket_qua.stdout:
+        raise Exception(f"Lỗi không xác định khi cấu hình WinRE:\n{ket_qua.stdout.strip()}\n{ket_qua.stderr.strip()}")
 
 # ==========================================
-# 5. ĐỘNG CƠ TẢI DỮ LIỆU ĐÁM MÂY (AUTO-FALLBACK LINK RAW)
+# 5. ĐỘNG CƠ TẢI DỮ LIỆU ĐÁM MÂY
 # ==========================================
 def truat_xuat_du_lieu_dam_may(ma_file_tai, link_raw_du_phong, duong_dan_luu_tru, ham_cap_nhat_giao_dien, ham_ghi_log, su_kien_huy):
     
-    # KẾ HOẠCH A: THỬ TẢI QUA 5 KHÓA API CỦA GOOGLE DRIVE
     api_thanh_cong = False
     if ma_file_tai and not ma_file_tai.startswith("http"):
         for thu_tu, khoa_bao_mat_b64 in enumerate(DANH_SACH_KHOA_API):
@@ -279,7 +323,6 @@ def truat_xuat_du_lieu_dam_may(ma_file_tai, link_raw_du_phong, duong_dan_luu_tru
                 ham_ghi_log(f"Khóa {thu_tu + 1} lỗi mạng: {str(e)}")
                 continue
 
-    # KẾ HOẠCH B: NẾU GOOGLE SẬP (HOẶC KHÔNG DÙNG GOOGLE), CHUYỂN SANG LINK RAW (HUGGING FACE)
     if link_raw_du_phong and link_raw_du_phong.startswith("http"):
         ham_ghi_log("Hệ thống chuyển hướng tự động: Bắt đầu tải qua Link Raw (Hugging Face / Direct Server)...")
         try:
@@ -303,7 +346,6 @@ def truat_xuat_du_lieu_dam_may(ma_file_tai, link_raw_du_phong, duong_dan_luu_tru
         except Exception as e:
             ham_ghi_log(f"Lỗi khi tải Link Raw: {str(e)}")
 
-    # KẾ HOẠCH C: NẾU LINK RAW KHÔNG CÓ HOẶC CŨNG LỖI MÀ CÓ ID GOOGLE, ĐÁ RA TRÌNH DUYỆT
     if ma_file_tai and not ma_file_tai.startswith("http"):
         ham_ghi_log("Tất cả luồng tải ngầm đã kiệt sức. Đẩy link ra trình duyệt web...")
         link_tai_web = f"https://drive.google.com/file/d/{ma_file_tai}/view"
@@ -417,7 +459,7 @@ class BangDieuKhienTrungTam(ctk.CTk):
     def khoi_tao_tien_trinh(self, nhan_ten_ban_cai, gia_tri_ma_file, gia_tri_link_raw):
         if self.co_the_hoat_dong: return
         if not self.bien_an_toan_test.get():
-            if not messagebox.askyesno("Xác Nhận Nguy Hiểm", "Hành động này sẽ XÓA SẠCH ổ C của máy tính. Chắc chắn tiếp tục?"): return
+            if not messagebox.askyesno("Xác Nhận Nguy Nhểm", "Hành động này sẽ XÓA SẠCH ổ C của máy tính. Chắc chắn tiếp tục?"): return
         self.co_the_hoat_dong = True; self.su_kien_huy_lenh.clear(); self.nut_huy_bo.configure(state="normal")
         threading.Thread(target=self.luong_dieu_phoi_chinh, args=(nhan_ten_ban_cai, gia_tri_ma_file, gia_tri_link_raw, None), daemon=True).start()
 
@@ -451,9 +493,13 @@ class BangDieuKhienTrungTam(ctk.CTk):
 
             self.in_nhat_ky_he_thong("Đang chèn kịch bản can thiệp vào nhân WinRE...")
             tiem_kich_ban_winre(o_dia_an_toan, self.in_nhat_ky_he_thong)
-            messagebox.showinfo("Hoàn Tất Chuẩn Bị", "Kịch bản Zero-Touch đã nạp. Máy sẽ khởi động lại ngay lập tức."); os.system("shutdown /r /t 0")
+            
+            messagebox.showinfo("Hoàn Tất Chuẩn Bị", "Kịch bản Zero-Touch đã nạp. Máy sẽ tự động khởi động lại trong 2 giây để vào giao diện cài đặt Win.")
+            # Thêm cờ /f để ép tắt các ứng dụng cứng đầu và /t 2 để Win có thời gian ghi đệm BCD
+            os.system("shutdown /r /f /t 2")
+            
         except Exception as loi_nghiem_trong:
-            messagebox.showerror("Ngoại Lệ Trầm Trọng", str(loi_nghiem_trong)); self.khoi_phuc_trang_thai_goc(f"Thất bại: {loi_nghiem_trong}")
+            messagebox.showerror("Lỗi Cốt Lõi Hệ Thống", str(loi_nghiem_trong)); self.khoi_phuc_trang_thai_goc(f"Thất bại: {loi_nghiem_trong}")
 
     def khoi_phuc_trang_thai_goc(self, thong_diep_cuoi="Chu kỳ thao tác đã đóng."):
         self.co_the_hoat_dong = False; self.nut_huy_bo.configure(state="disabled"); self.in_nhat_ky_he_thong(thong_diep_cuoi)
