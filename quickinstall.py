@@ -49,10 +49,10 @@ ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
 
 # ==========================================
-# 3. CÁC CÔNG CỤ TIỆN ÍCH
+# 3. CÁC CÔNG CỤ TIỆN ÍCH CHUYÊN SÂU
 # ==========================================
 def do_bang_thong_mang(ham_ghi_log):
-    ham_ghi_log("Đang đo lường băng thông mạng qua máy chủ Cloudflare...")
+    ham_ghi_log("Đang đo lường băng thông mạng qua đám mây...")
     try:
         url_kiem_tra = "https://speed.cloudflare.com/__down?bytes=1048576"
         yeu_cau = urllib.request.Request(url_kiem_tra, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'})
@@ -64,20 +64,22 @@ def do_bang_thong_mang(ham_ghi_log):
         ham_ghi_log(f"Đã đo xong. Tốc độ mạng hiện tại: ~ {toc_do_thuc_te:.1f} MB/s")
         return toc_do_thuc_te
     except Exception as loi:
-        ham_ghi_log(f"Lỗi đo tốc độ ({str(loi)}). Áp dụng tốc độ giả lập mặc định.")
+        ham_ghi_log("Không thể đo tốc độ đường truyền. Bỏ qua...")
         return 5.0
 
 def go_bo_bitlocker(ham_ghi_log):
-    ham_ghi_log("Đang dò quét trạng thái mã hóa BitLocker trên phân vùng hệ điều hành...")
+    ham_ghi_log("Đang dò quét trạng thái mã hóa BitLocker...")
     try:
         o_dia_he_thong = os.environ.get('SystemDrive', 'C:')
-        ket_qua_kiem_tra = subprocess.check_output(f'manage-bde -status {o_dia_he_thong}', shell=True).decode('utf-8', errors='ignore')
+        tien_trinh = subprocess.run(f'manage-bde -status {o_dia_he_thong}', shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, creationflags=subprocess.CREATE_NO_WINDOW)
+        ket_qua_kiem_tra = tien_trinh.stdout.decode('utf-8', errors='ignore') if tien_trinh.stdout else ""
+        
         if any(tu_khoa in ket_qua_kiem_tra for tu_khoa in ["Mã hóa", "Encryption", "完全な暗号化"]):
             ham_ghi_log(f"Phát hiện BitLocker đang khóa! Đang giải mã ép buộc trên {o_dia_he_thong}...")
             subprocess.run(f'manage-bde -off {o_dia_he_thong}', shell=True, creationflags=subprocess.CREATE_NO_WINDOW)
         else:
-            ham_ghi_log("Không phát hiện BitLocker. Phân vùng sạch.")
-    except Exception as e:
+            ham_ghi_log("Không phát hiện BitLocker. Phân vùng an toàn.")
+    except Exception:
         pass
 
 def tim_o_dia_luu_tru_an_toan():
@@ -99,18 +101,20 @@ def tim_o_dia_luu_tru_an_toan():
                 o_dia_toi_uu = o_dia
         except: pass
             
-    if not o_dia_toi_uu: raise Exception("Nghiêm trọng: Không tìm thấy phân vùng lưu trữ nào trống trên 10GB!")
+    if not o_dia_toi_uu: raise Exception("Không tìm thấy ổ đĩa nào trống trên 10GB để lưu trữ tạm thời!")
     return o_dia_toi_uu
 
 def sao_luu_du_lieu_he_thong(thu_muc_dich, lua_chon_driver, lua_chon_wifi, ham_ghi_log):
     kich_ban_setup_complete = '@echo off\n'
 
     if lua_chon_wifi:
-        ham_ghi_log("Khởi động tiến trình bóc tách và sao lưu hồ sơ WiFi...")
+        ham_ghi_log("Khởi động tiến trình sao lưu hồ sơ WiFi...")
         thu_muc_chua_wifi = os.path.join(thu_muc_dich, "WiFi")
         os.makedirs(thu_muc_chua_wifi, exist_ok=True)
         try:
-            thong_tin_mang = subprocess.check_output('netsh wlan show interfaces', shell=True).decode('utf-8', errors='ignore')
+            tien_trinh_wifi = subprocess.run('netsh wlan show interfaces', shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, creationflags=subprocess.CREATE_NO_WINDOW)
+            thong_tin_mang = tien_trinh_wifi.stdout.decode('utf-8', errors='ignore') if tien_trinh_wifi.stdout else ""
+            
             ten_wifi_dang_dung = re.search(r'SSID\s*:\s*(.*)', thong_tin_mang)
             if ten_wifi_dang_dung:
                 with open(os.path.join(thu_muc_chua_wifi, "current_ssid.txt"), "w", encoding="utf-8") as tep_luu_ten: 
@@ -123,7 +127,7 @@ def sao_luu_du_lieu_he_thong(thu_muc_dich, lua_chon_driver, lua_chon_wifi, ham_g
                 'if exist "%~dp0WiFi\\current_ssid.txt" (set /p WLAN_SSID=<"%~dp0WiFi\\current_ssid.txt"\nnetsh wlan connect name="%WLAN_SSID%")\n'
                 'rd /s /q "%~dp0WiFi" >nul 2>&1\n\n'
             )
-        except Exception as e: ham_ghi_log(f"Cảnh báo: Không thể trích xuất WiFi ({e})")
+        except Exception as e: ham_ghi_log(f"Lỗi trích xuất WiFi: {e}")
 
     kich_ban_setup_complete += (
         'del /q /f /s "%WINDIR%\\Temp\\*.*" >nul 2>&1\n'
@@ -151,7 +155,7 @@ def sao_luu_du_lieu_he_thong(thu_muc_dich, lua_chon_driver, lua_chon_wifi, ham_g
             subprocess.run(["powershell", "-Command", lenh_sao_luu_chon_loc], creationflags=subprocess.CREATE_NO_WINDOW)
 
 # ==========================================
-# 4. LÕI TIÊM WINRE (V26.9 - FORCE BOOT CHỐNG TRÀN PHÂN VÙNG)
+# 4. LÕI TIÊM WINRE (V27.0 - ĐẬP ĐI XÂY LẠI CHỐNG LỖI KẸT)
 # ==========================================
 def tiem_kich_ban_winre(o_dia_luu_wim, ham_ghi_log):
     chuoi_ngau_nhien = ''.join(random.choices(string.ascii_uppercase + string.digits, k=5))
@@ -173,52 +177,48 @@ def tiem_kich_ban_winre(o_dia_luu_wim, ham_ghi_log):
     os.makedirs(thu_muc_cai_dat, exist_ok=True)
     with open(f"{thu_muc_cai_dat}\\unattend.xml", "w", encoding="utf-8") as tep_xml: tep_xml.write(noi_dung_unattend)
     
-    # KỊCH BẢN POWERSHELL HOÀN TOÀN MỚI
     ma_nguon_ps = f"""
     $ErrorActionPreference = 'Continue'
     try {{
-        Write-Output "Đang vô hiệu hóa Fast Startup..."
+        Write-Output "Tat che do ngu dong (Fast Startup)..."
         powercfg /h off
         
-        Write-Output "Đang ngắt kết nối WinRE hiện tại..."
-        reagentc.exe /disable
+        Write-Output "Huy WinRE hien tai..."
+        reagentc.exe /disable | Out-Null
         Start-Sleep -Seconds 2
 
-        $SourceWIM = "C:\\Windows\\System32\\Recovery\\winre.wim"
-        if (-not (Test-Path $SourceWIM)) {{ $SourceWIM = "C:\\Recovery\\WindowsRE\\winre.wim" }}
-        if (-not (Test-Path $SourceWIM)) {{
-            Write-Output "Đang quét sâu để tìm winre.wim..."
-            $SourceWIM = (Get-ChildItem -Path C:\\ -Filter "winre.wim" -Recurse -ErrorAction SilentlyContinue -Force | Select-Object -First 1).FullName
+        $NguonWIM = "C:\\Windows\\System32\\Recovery\\winre.wim"
+        if (-not (Test-Path $NguonWIM)) {{ $NguonWIM = "C:\\Recovery\\WindowsRE\\winre.wim" }}
+        if (-not (Test-Path $NguonWIM)) {{
+            $NguonWIM = (Get-ChildItem -Path C:\\ -Filter "winre.wim" -Recurse -ErrorAction SilentlyContinue -Force | Select-Object -First 1).FullName
         }}
-        if (-not $SourceWIM) {{ Throw "Tuyệt đối không tìm thấy winre.wim trên máy khách!" }}
+        if (-not $NguonWIM) {{ Throw "Khong tim thay file winre.wim he thong!" }}
 
-        $KiTuHeThong = [System.IO.Path]::GetPathRoot($env:windir).Substring(0,1)
-        $ThongTinPhanVung = Get-Partition -DriveLetter $KiTuHeThong
-        $ThuTuODia = $ThongTinPhanVung.DiskNumber
-        $ThuTuPhanVung = $ThongTinPhanVung.PartitionNumber
+        $ThuTuODia = (Get-Partition -DriveLetter ([System.IO.Path]::GetPathRoot($env:windir).Substring(0,1))).DiskNumber
+        $ThuTuPhanVung = (Get-Partition -DriveLetter ([System.IO.Path]::GetPathRoot($env:windir).Substring(0,1))).PartitionNumber
 
-        $WorkDir = "C:\\MountRE"
-        $TempWIM = "C:\\winre_temp.wim"
+        $ThuMucXuLy = "C:\\MountRE"
+        $TamWIM = "C:\\winre_temp.wim"
 
-        if (Test-Path $WorkDir) {{ 
-            dism.exe /Unmount-Image /MountDir:$WorkDir /Discard | Out-Null
-            Remove-Item $WorkDir -Recurse -Force 
+        if (Test-Path $ThuMucXuLy) {{ 
+            dism.exe /Unmount-Image /MountDir:$ThuMucXuLy /Discard | Out-Null
+            Remove-Item $ThuMucXuLy -Recurse -Force 
         }}
-        New-Item -ItemType Directory -Force -Path $WorkDir | Out-Null
+        New-Item -ItemType Directory -Force -Path $ThuMucXuLy | Out-Null
 
-        cmd.exe /c "attrib -h -s -r `"$SourceWIM`""
-        Copy-Item $SourceWIM $TempWIM -Force
-        cmd.exe /c "attrib -h -s -r `"$TempWIM`""
+        cmd.exe /c "attrib -h -s -r `"$NguonWIM`""
+        Copy-Item $NguonWIM $TamWIM -Force
+        cmd.exe /c "attrib -h -s -r `"$TamWIM`""
 
-        Write-Output "Bắt đầu Mount WIM..."
-        dism.exe /Mount-Image /ImageFile:$TempWIM /Index:1 /MountDir:$WorkDir | Out-Null
+        Write-Output "Đang mo file WIM..."
+        dism.exe /Mount-Image /ImageFile:$TamWIM /Index:1 /MountDir:$ThuMucXuLy | Out-Null
 
-        $KichBanXoaVaCai = @"
+        $KichBanBatch = @"
 @echo off
-for %%D in (C D E F G H I J K L M N O P Q R S T U V W X Y Z) do (if exist "%%D:\\ZT_Cloud_Install\\install.wim" set "WPATH=%%D:\\ZT_Cloud_Install\\install.wim")
+for %%D in (C D E F G H I J K L M N O P Q R S T U V W X Y Z) do (if exist "%%D:\\ZT_Cloud_Install\\install.wim" set "WPATH=%%D:\\ZT_Cloud_Install")
 (echo select disk $ThuTuODia & echo select partition $ThuTuPhanVung & echo assign letter=W & echo format quick fs=ntfs label="Windows") | diskpart
-dism /apply-image /imagefile:"%WPATH%" /index:1 /applydir:W:\\
-if exist "%%~dpWPATHDrivers" ( dism /image:W:\\ /Add-Driver /Driver:"%%~dpWPATHDrivers" /Recurse )
+dism /apply-image /imagefile:"%WPATH%\\install.wim" /index:1 /applydir:W:\\
+if exist "%WPATH%\\Drivers" ( dism /image:W:\\ /Add-Driver /Driver:"%WPATH%\\Drivers" /Recurse )
 bcdboot W:\\Windows
 
 reg load HKLM\\ZT W:\\Windows\\System32\\config\\SYSTEM
@@ -234,35 +234,33 @@ reg add "HKLM\\ZTSYSTEM\\ControlSet001\\Services\\Tcpip\\Parameters" /v "NV Host
 reg unload HKLM\\ZTSYSTEM
 
 mkdir W:\\Windows\\Panther
-copy /Y "%%~dpWPATHunattend.xml" W:\\Windows\\Panther\\unattend.xml
-if exist "%%~dpWPATHSetupComplete.cmd" ( mkdir W:\\Windows\\Setup\\Scripts & copy /Y "%%~dpWPATHSetupComplete.cmd" W:\\Windows\\Setup\\Scripts\\ )
-if exist "%%~dpWPATHWiFi" ( mkdir W:\\Windows\\Setup\\Scripts\\WiFi & xcopy /E /Y /I "%%~dpWPATHWiFi" W:\\Windows\\Setup\\Scripts\\WiFi\\ )
+copy /Y "%WPATH%\\unattend.xml" W:\\Windows\\Panther\\unattend.xml
+if exist "%WPATH%\\SetupComplete.cmd" ( mkdir W:\\Windows\\Setup\\Scripts & copy /Y "%WPATH%\\SetupComplete.cmd" W:\\Windows\\Setup\\Scripts\\ )
+if exist "%WPATH%\\WiFi" ( mkdir W:\\Windows\\Setup\\Scripts\\WiFi & xcopy /E /Y /I "%WPATH%\\WiFi" W:\\Windows\\Setup\\Scripts\\WiFi\\ )
 
 wpeutil reboot
 "@
 
-        Write-Output "Đang nạp kịch bản vào WIM..."
-        $KichBanXoaVaCai | Out-File "$WorkDir\\Windows\\System32\\LenhRE.cmd" -Encoding oem
-        $WinPeShl = "[LaunchApps]`r`nX:\\Windows\\System32\\LenhRE.cmd"
-        [System.IO.File]::WriteAllText("$WorkDir\\Windows\\System32\\winpeshl.ini", $WinPeShl)
+        Write-Output "Đang ghi kịch ban tu dong vao WIM..."
+        $KichBanBatch | Out-File "$ThuMucXuLy\\Windows\\System32\\LenhRE.cmd" -Encoding oem
+        "[LaunchApps]`r`nX:\\Windows\\System32\\LenhRE.cmd" | Out-File "$ThuMucXuLy\\Windows\\System32\\winpeshl.ini" -Encoding ascii
 
-        Write-Output "Đang đóng gói WIM (Commit)..."
-        dism.exe /Unmount-Image /MountDir:$WorkDir /Commit | Out-Null
+        Write-Output "Đang đóng gói WIM..."
+        dism.exe /Unmount-Image /MountDir:$ThuMucXuLy /Commit | Out-Null
 
-        # MẸO VƯỢT RÀO: ÉP LƯU TRỮ WIM Ở Ổ C ĐỂ KHÔNG BAO GIỜ BỊ BÁO TRÀN PHÂN VÙNG ẨN
-        $ReDest = "C:\\Recovery\\WindowsRE"
-        if (-not (Test-Path $ReDest)) {{ New-Item -ItemType Directory -Force -Path $ReDest | Out-Null }}
-        Copy-Item $TempWIM "$ReDest\\winre.wim" -Force
-        cmd.exe /c "attrib -h -s -r `"$ReDest\\winre.wim`""
-        Remove-Item $TempWIM -Force
+        $DiemDenRE = "C:\\Recovery\\WindowsRE"
+        if (-not (Test-Path $DiemDenRE)) {{ New-Item -ItemType Directory -Force -Path $DiemDenRE | Out-Null }}
+        Copy-Item $TamWIM "$DiemDenRE\\winre.wim" -Force
+        cmd.exe /c "attrib -h -s -r `"$DiemDenRE\\winre.wim`""
+        Remove-Item $TamWIM -Force
 
-        Write-Output "Kích hoạt WinRE trực tiếp từ ổ C..."
-        reagentc.exe /setreimage /path $ReDest | Out-Null
+        Write-Output "Đang bat lai WinRE..."
+        reagentc.exe /setreimage /path $DiemDenRE | Out-Null
         reagentc.exe /enable | Out-Null
         Start-Sleep -Seconds 2
         
         $CheckBoot = reagentc.exe /boottore
-        if ($LASTEXITCODE -ne 0) {{ Throw "Lệnh ép khởi động WinRE (boottore) bị Windows từ chối!" }}
+        if ($LASTEXITCODE -ne 0) {{ Throw "Loi khong the xac nhan khoi dong WinRE!" }}
         
         Write-Output "WINRE_SUCCESS"
     }} catch {{
@@ -270,23 +268,34 @@ wpeutil reboot
     }}
     """
     
-    with open(f"{thu_muc_cai_dat}\\config.ps1", "w", encoding="utf-8") as tep_ps1: tep_ps1.write(ma_nguon_ps)
-    ket_qua = subprocess.run(["powershell", "-ExecutionPolicy", "Bypass", "-File", f"{thu_muc_cai_dat}\\config.ps1"], capture_output=True, text=True, creationflags=subprocess.CREATE_NO_WINDOW)
+    duong_dan_ps1 = f"{thu_muc_cai_dat}\\config.ps1"
+    with open(duong_dan_ps1, "w", encoding="utf-8") as tep_ps1: 
+        tep_ps1.write(ma_nguon_ps)
+        
+    # FIX LỖI NONETYPE BẰNG CÁCH ÉP CHUẨN ĐẦU RA (PIPE)
+    tien_trinh = subprocess.run(
+        ["powershell", "-ExecutionPolicy", "Bypass", "-File", duong_dan_ps1], 
+        stdout=subprocess.PIPE, 
+        stderr=subprocess.PIPE, 
+        creationflags=subprocess.CREATE_NO_WINDOW
+    )
     
-    # Bắt lỗi rõ ràng và ném ra cho Python xử lý thay vì im lặng
-    if "LỖI WINRE:" in ket_qua.stdout:
-        loi_thuc_te = re.search(r'LỖI WINRE:(.*)', ket_qua.stdout)
-        thong_diep = loi_thuc_te.group(1).strip() if loi_thuc_te else ket_qua.stdout.strip()
-        raise Exception(f"Thiết lập WinRE thất bại: {thong_diep}")
-    elif "WINRE_SUCCESS" not in ket_qua.stdout:
-        raise Exception(f"Lỗi không xác định khi cấu hình WinRE:\n{ket_qua.stdout.strip()}\n{ket_qua.stderr.strip()}")
+    # ÉP KIỂU VỀ CHUỖI, NẾU LÀ NONE THÌ TRẢ VỀ CHUỖI RỖNG
+    ket_qua_out = tien_trinh.stdout.decode('utf-8', errors='ignore') if tien_trinh.stdout else ""
+    ket_qua_err = tien_trinh.stderr.decode('utf-8', errors='ignore') if tien_trinh.stderr else ""
+    
+    if "LỖI WINRE:" in ket_qua_out:
+        loi_thuc_te = re.search(r'LỖI WINRE:(.*)', ket_qua_out)
+        thong_diep = loi_thuc_te.group(1).strip() if loi_thuc_te else ket_qua_out.strip()
+        raise Exception(f"Thiết lập kịch bản WinRE thất bại: {thong_diep}")
+    elif "WINRE_SUCCESS" not in ket_qua_out:
+        raise Exception(f"Lỗi hệ thống khi cầu hình môi trường WinRE:\n{ket_qua_out}\n{ket_qua_err}")
 
 # ==========================================
-# 5. ĐỘNG CƠ TẢI DỮ LIỆU ĐÁM MÂY
+# 5. ĐỘNG CƠ TẢI DỮ LIỆU ĐÁM MÂY VÀ LOCAL
 # ==========================================
 def truat_xuat_du_lieu_dam_may(ma_file_tai, link_raw_du_phong, duong_dan_luu_tru, ham_cap_nhat_giao_dien, ham_ghi_log, su_kien_huy):
     
-    api_thanh_cong = False
     if ma_file_tai and not ma_file_tai.startswith("http"):
         for thu_tu, khoa_bao_mat_b64 in enumerate(DANH_SACH_KHOA_API):
             if su_kien_huy.is_set(): return False
@@ -311,20 +320,16 @@ def truat_xuat_du_lieu_dam_may(ma_file_tai, link_raw_du_phong, duong_dan_luu_tru
                                 phan_tram = (dung_luong_da_tai / tong_kich_thuoc_file) * 100
                                 toc_do_giay = dung_luong_da_tai / thoi_gian_xu_ly
                                 ham_cap_nhat_giao_dien(phan_tram, dung_luong_da_tai, tong_kich_thuoc_file, toc_do_giay)
-                ham_ghi_log(f"Đang truyền tải tốc độ cao qua Khóa API Google số {thu_tu + 1}.")
+                ham_ghi_log(f"Đang truyền tải tốc độ cao qua API số {thu_tu + 1}.")
                 return "SUCCESS"
                 
             except urllib.error.HTTPError as loi_http:
-                if loi_http.code == 403: ham_ghi_log(f"Khóa {thu_tu + 1} (403): Bị chặn/Quá tải giới hạn.")
-                elif loi_http.code == 404: ham_ghi_log(f"Khóa {thu_tu + 1} (404): Không tìm thấy ID '{ma_file_tai}'.")
-                else: ham_ghi_log(f"Khóa {thu_tu + 1} lỗi kết nối HTTP.")
+                if loi_http.code in [403, 404]: ham_ghi_log(f"API {thu_tu + 1} bị chặn hoặc quá tải.")
                 continue
-            except Exception as e: 
-                ham_ghi_log(f"Khóa {thu_tu + 1} lỗi mạng: {str(e)}")
-                continue
+            except Exception: continue
 
     if link_raw_du_phong and link_raw_du_phong.startswith("http"):
-        ham_ghi_log("Hệ thống chuyển hướng tự động: Bắt đầu tải qua Link Raw (Hugging Face / Direct Server)...")
+        ham_ghi_log("Hệ thống chuyển hướng tự động: Tải qua Link Raw tốc độ cao...")
         try:
             yeu_cau = urllib.request.Request(link_raw_du_phong, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'})
             with urllib.request.urlopen(yeu_cau, timeout=15) as cau_tra_loi:
@@ -341,27 +346,24 @@ def truat_xuat_du_lieu_dam_may(ma_file_tai, link_raw_du_phong, duong_dan_luu_tru
                             phan_tram = (dung_luong_da_tai / tong_kich_thuoc_file) * 100
                             toc_do_giay = dung_luong_da_tai / thoi_gian_xu_ly
                             ham_cap_nhat_giao_dien(phan_tram, dung_luong_da_tai, tong_kich_thuoc_file, toc_do_giay)
-            ham_ghi_log("Tải file từ Link Raw thành công 100%!")
+            ham_ghi_log("Tải file từ Link Raw hoàn tất 100%!")
             return "SUCCESS"
         except Exception as e:
             ham_ghi_log(f"Lỗi khi tải Link Raw: {str(e)}")
 
     if ma_file_tai and not ma_file_tai.startswith("http"):
-        ham_ghi_log("Tất cả luồng tải ngầm đã kiệt sức. Đẩy link ra trình duyệt web...")
+        ham_ghi_log("Luồng tải ngầm bị chặn. Chuyển hướng ra Web...")
         link_tai_web = f"https://drive.google.com/file/d/{ma_file_tai}/view"
         try:
             webbrowser.open(link_tai_web)
-            ham_ghi_log("Đã mở giao diện Google Drive trên trình duyệt. Vui lòng bấm nút Tải xuống.")
             return "WEB_REDIRECT"
-        except Exception as e:
-            ham_ghi_log(f"Không thể mở trình duyệt: {str(e)}")
-            return False
+        except Exception: return False
 
-    ham_ghi_log("LỖI: Không có luồng tải nào hoạt động. Vui lòng kiểm tra lại file CSV.")
+    ham_ghi_log("LỖI: Trống địa chỉ nguồn tải.")
     return False
 
 # ==========================================
-# 6. GIAO DIỆN BẢNG ĐIỀU KHIỂN CHÍNH
+# 6. GIAO DIỆN ĐIỀU KHIỂN
 # ==========================================
 class BangDieuKhienTrungTam(ctk.CTk):
     def __init__(self):
@@ -451,7 +453,7 @@ class BangDieuKhienTrungTam(ctk.CTk):
         duong_dan_file = filedialog.askopenfilename(filetypes=[("Tập tin Windows Image", "*.wim")])
         if not duong_dan_file: return
         if not self.bien_an_toan_test.get():
-            if not messagebox.askyesno("Xác Nhận Nguy Hiểm", "Hành động này sẽ XÓA SẠCH ổ C của máy tính. Chắc chắn tiếp tục?"): return
+            if not messagebox.askyesno("Xác Nhận Nguy Hiểm", "Hành động này sẽ XÓA SẠCH toàn bộ dữ liệu trên ổ C. Bạn có chắc chắn muốn chạy?"): return
         
         self.co_the_hoat_dong = True; self.su_kien_huy_lenh.clear(); self.nut_huy_bo.configure(state="normal")
         threading.Thread(target=self.luong_dieu_phoi_chinh, args=("Cài đặt từ Local", None, None, duong_dan_file), daemon=True).start()
@@ -459,53 +461,63 @@ class BangDieuKhienTrungTam(ctk.CTk):
     def khoi_tao_tien_trinh(self, nhan_ten_ban_cai, gia_tri_ma_file, gia_tri_link_raw):
         if self.co_the_hoat_dong: return
         if not self.bien_an_toan_test.get():
-            if not messagebox.askyesno("Xác Nhận Nguy Nhểm", "Hành động này sẽ XÓA SẠCH ổ C của máy tính. Chắc chắn tiếp tục?"): return
+            if not messagebox.askyesno("Xác Nhận Nguy Hiểm", "Hành động này sẽ XÓA SẠCH toàn bộ dữ liệu trên ổ C. Bạn có chắc chắn muốn chạy?"): return
         self.co_the_hoat_dong = True; self.su_kien_huy_lenh.clear(); self.nut_huy_bo.configure(state="normal")
         threading.Thread(target=self.luong_dieu_phoi_chinh, args=(nhan_ten_ban_cai, gia_tri_ma_file, gia_tri_link_raw, None), daemon=True).start()
 
     def luong_dieu_phoi_chinh(self, nhan_ten_ban_cai, gia_tri_ma_file, gia_tri_link_raw, duong_dan_local=None):
         try:
             go_bo_bitlocker(self.in_nhat_ky_he_thong)
-            o_dia_an_toan = tim_o_dia_luu_tru_an_toan(); thu_muc_chua_anh_wim = f"{o_dia_an_toan}:\\ZT_Cloud_Install"; os.makedirs(thu_muc_chua_anh_wim, exist_ok=True); vi_tri_luu_file_wim = os.path.join(thu_muc_chua_anh_wim, "install.wim")
+            o_dia_an_toan = tim_o_dia_luu_tru_an_toan()
+            thu_muc_chua_anh_wim = f"{o_dia_an_toan}:\\ZT_Cloud_Install"
+            os.makedirs(thu_muc_chua_anh_wim, exist_ok=True)
+            vi_tri_luu_file_wim = os.path.join(thu_muc_chua_anh_wim, "install.wim")
+            
             sao_luu_du_lieu_he_thong(thu_muc_chua_anh_wim, self.bien_chon_driver.get(), self.bien_chon_wifi.get(), self.in_nhat_ky_he_thong)
 
             if duong_dan_local:
-                self.in_nhat_ky_he_thong(f"Đang tiến hành sao chép tập tin WIM vào ổ cứng: {duong_dan_local}")
-                self.nhan_chi_so_tai.configure(text="Đang chép file nội bộ. Vui lòng đợi quá trình hoàn tất...")
+                self.in_nhat_ky_he_thong(f"Tiến hành nạp file WIM từ ổ cứng: {duong_dan_local}")
+                self.nhan_chi_so_tai.configure(text="Đang chép dữ liệu nội bộ. Vui lòng không tắt phần mềm...")
                 self.update()
                 shutil.copy2(duong_dan_local, vi_tri_luu_file_wim)
-                self.in_nhat_ky_he_thong("Đã chép file xong.")
+                self.in_nhat_ky_he_thong("Sao chép file cục bộ hoàn tất.")
             else:
                 do_bang_thong_mang(self.in_nhat_ky_he_thong)
-                self.in_nhat_ky_he_thong(f"Mở luồng tải dữ liệu đám mây: {nhan_ten_ban_cai}...")
+                self.in_nhat_ky_he_thong(f"Mở cổng kết nối dữ liệu: {nhan_ten_ban_cai}...")
                 ket_qua_tai = truat_xuat_du_lieu_dam_may(gia_tri_ma_file, gia_tri_link_raw, vi_tri_luu_file_wim, self.lam_moi_giao_dien_tai, self.in_nhat_ky_he_thong, self.su_kien_huy_lenh)
                 
                 if ket_qua_tai == "WEB_REDIRECT":
                     try: os.remove(vi_tri_luu_file_wim)
                     except: pass
-                    messagebox.showinfo("Chuyển Hướng Trình Duyệt", "Các máy chủ tải ngầm đều bận hoặc khóa.\n\nHệ thống đã tự động mở Link phụ trên trình duyệt Web. Vui lòng tải thủ công.\n\nSAU KHI TẢI XONG FILE, hãy mở lại Tool và chọn tính năng [CHỌN FILE WIM TỪ Ổ CỨNG / USB] màu xanh lá để tiếp tục cài đặt.")
-                    return self.khoi_phuc_trang_thai_goc("Đang chờ người dùng tải file thủ công...")
+                    messagebox.showinfo("Yêu cầu Tải Thủ Công", "Máy chủ hiện đang quá tải.\n\nPhần mềm đã mở liên kết trực tiếp trên trình duyệt Web. Hãy tải file về máy.\n\nSau khi tải xong, hãy mở lại Tool và chọn nút [CHỌN FILE WIM TỪ Ổ CỨNG / USB] để tiếp tục tự động hóa cài đặt.")
+                    return self.khoi_phuc_trang_thai_goc("Đang chờ xác nhận tải file từ trình duyệt...")
                 elif not ket_qua_tai: 
-                    return self.khoi_phuc_trang_thai_goc("Tiến trình tải dữ liệu bị hủy do lỗi mạng hoặc file lỗi.")
+                    return self.khoi_phuc_trang_thai_goc("Tiến trình cài đặt bị hủy bởi người dùng hoặc lỗi mạng.")
 
             if self.bien_an_toan_test.get():
-                messagebox.showinfo("Báo Cáo", f"Đã lưu file an toàn tại: {vi_tri_luu_file_wim}\nChế độ Test: Máy không bị Format."); return self.khoi_phuc_trang_thai_goc("Kiểm thử xong.")
+                messagebox.showinfo("Kiểm Thử Thành Công", f"Đã lưu trữ môi trường cài đặt tại: {vi_tri_luu_file_wim}\n\nDo đang ở Chế độ Kiểm Thử, máy tính sẽ không bị Format.")
+                return self.khoi_phuc_trang_thai_goc("Quá trình kiểm thử đã đóng lại an toàn.")
 
-            self.in_nhat_ky_he_thong("Đang chèn kịch bản can thiệp vào nhân WinRE...")
+            self.in_nhat_ky_he_thong("Đang chèn kịch bản can thiệp sâu vào nhân WinRE...")
             tiem_kich_ban_winre(o_dia_an_toan, self.in_nhat_ky_he_thong)
             
-            messagebox.showinfo("Hoàn Tất Chuẩn Bị", "Kịch bản Zero-Touch đã nạp. Máy sẽ tự động khởi động lại trong 2 giây để vào giao diện cài đặt Win.")
-            # Thêm cờ /f để ép tắt các ứng dụng cứng đầu và /t 2 để Win có thời gian ghi đệm BCD
+            messagebox.showinfo("Chuẩn Bị Hoàn Tất", "Kịch bản tự động hóa đã nạp thành công vào hệ thống. Máy tính sẽ khởi động lại ngay bây giờ để tiến hành Format và cài mới Windows.")
             os.system("shutdown /r /f /t 2")
             
         except Exception as loi_nghiem_trong:
-            messagebox.showerror("Lỗi Cốt Lõi Hệ Thống", str(loi_nghiem_trong)); self.khoi_phuc_trang_thai_goc(f"Thất bại: {loi_nghiem_trong}")
+            messagebox.showerror("Ngoại Lệ Lõi Hệ Thống", str(loi_nghiem_trong))
+            self.khoi_phuc_trang_thai_goc(f"Tiến trình thất bại do lỗi cấu hình: {loi_nghiem_trong}")
 
-    def khoi_phuc_trang_thai_goc(self, thong_diep_cuoi="Chu kỳ thao tác đã đóng."):
-        self.co_the_hoat_dong = False; self.nut_huy_bo.configure(state="disabled"); self.in_nhat_ky_he_thong(thong_diep_cuoi)
+    def khoi_phuc_trang_thai_goc(self, thong_diep_cuoi="Hoạt động tạm dừng."):
+        self.co_the_hoat_dong = False
+        self.nut_huy_bo.configure(state="disabled")
+        self.in_nhat_ky_he_thong(thong_diep_cuoi)
 
     def lam_moi_giao_dien_tai(self, gia_tri_phan_tram, dung_luong_da_tai, tong_dung_luong_file, toc_do_tren_giay):
-        self.thanh_bar_tien_do.set(gia_tri_phan_tram / 100); self.nhan_chi_so_tai.configure(text=f"{int(gia_tri_phan_tram)}% | {(toc_do_tren_giay / (1024 * 1024)):.1f} MB/s | {(dung_luong_da_tai / 1024**3):.1f} GB"); self.update()
+        self.thanh_bar_tien_do.set(gia_tri_phan_tram / 100)
+        self.nhan_chi_so_tai.configure(text=f"{int(gia_tri_phan_tram)}% | {(toc_do_tren_giay / (1024 * 1024)):.1f} MB/s | {(dung_luong_da_tai / 1024**3):.1f} GB")
+        self.update()
 
 if __name__ == "__main__":
-    ung_dung_ky_thuat = BangDieuKhienTrungTam(); ung_dung_ky_thuat.mainloop()
+    ung_dung_ky_thuat = BangDieuKhienTrungTam()
+    ung_dung_ky_thuat.mainloop()
