@@ -152,7 +152,7 @@ def sao_luu_du_lieu_he_thong(thu_muc_dich, lua_chon_driver, lua_chon_wifi, ham_g
             subprocess.run(["powershell", "-Command", lenh_sao_luu_chon_loc], creationflags=subprocess.CREATE_NO_WINDOW)
 
 # ==========================================
-# 4. LÕI TIÊM WINRE 
+# 4. LÕI TIÊM WINRE (V28.2 - LIVE LOG & BYPASS PHÂN VÙNG ẨN)
 # ==========================================
 def tiem_kich_ban_winre(o_dia_luu_wim, ham_ghi_log):
     chuoi_ngau_nhien = ''.join(random.choices(string.ascii_uppercase + string.digits, k=5))
@@ -174,9 +174,11 @@ def tiem_kich_ban_winre(o_dia_luu_wim, ham_ghi_log):
     os.makedirs(thu_muc_cai_dat, exist_ok=True)
     with open(f"{thu_muc_cai_dat}\\unattend.xml", "w", encoding="utf-8") as tep_xml: tep_xml.write(noi_dung_unattend)
     
+    # SỬ DỤNG WRITE-OUTPUT ĐỂ ĐẨY LOG RA CHO PYTHON ĐỌC TRỰC TIẾP
     ma_nguon_ps = f"""
-$ErrorActionPreference = 'SilentlyContinue'
+$ErrorActionPreference = 'Continue'
 
+Write-Output "[PE-LOG] Dang tat che do Fast Startup..."
 powercfg /h off | Out-Null
 
 $KiTuHeThong = [System.IO.Path]::GetPathRoot($env:windir).Substring(0,1)
@@ -188,8 +190,7 @@ $DuongDanWinRE = "C:\\Windows\\System32\\Recovery\\winre.wim"
 $ThuMucGiaoTiep = "C:\\MountRE"
 $WinRECopy = "C:\\winre_xu_ly.wim"
 
-reagentc.exe /enable | Out-Null
-Start-Sleep -Seconds 2
+Write-Output "[PE-LOG] Dang huy dang ky WinRE cu de tranh xung dot..."
 reagentc.exe /disable | Out-Null
 Start-Sleep -Seconds 2
 
@@ -199,9 +200,13 @@ if (-not (Test-Path $DuongDanWinRE)) {{
     }}
 }}
 
-if (Test-Path $ThuMucGiaoTiep) {{ dism.exe /Unmount-Image /MountDir:$ThuMucGiaoTiep /Discard | Out-Null; Remove-Item $ThuMucGiaoTiep -Recurse -Force }}
+if (Test-Path $ThuMucGiaoTiep) {{ 
+    dism.exe /Unmount-Image /MountDir:$ThuMucGiaoTiep /Discard | Out-Null
+    Remove-Item $ThuMucGiaoTiep -Recurse -Force 
+}}
 New-Item -ItemType Directory -Force -Path $ThuMucGiaoTiep | Out-Null
 
+Write-Output "[PE-LOG] Bắt đầu Mount file winre.wim de chen code..."
 cmd.exe /c "attrib -h -s -r `"$DuongDanWinRE`""
 Copy-Item $DuongDanWinRE $WinRECopy -Force
 Set-ItemProperty $WinRECopy IsReadOnly $false
@@ -235,33 +240,75 @@ if exist "%WPATH%\\WiFi" ( mkdir W:\\Windows\\Setup\\Scripts\\WiFi & xcopy /E /Y
 wpeutil reboot
 "@
 
-    $KichBanXoaVaCai | Out-File "$ThuMucGiaoTiep\\Windows\\System32\\LenhRE.cmd" -Encoding oem
-    '[LaunchApps]' + [char]13 + [char]10 + 'X:\\Windows\\System32\\LenhRE.cmd' | Out-File "$ThuMucGiaoTiep\\Windows\\System32\\winpeshl.ini" -Encoding ascii
-    
-    dism.exe /Unmount-Image /MountDir:$ThuMucGiaoTiep /Commit | Out-Null
-    cmd.exe /c "attrib -h -s -r `"$DuongDanWinRE`""
-    Copy-Item $WinRECopy $DuongDanWinRE -Force
-    Remove-Item $WinRECopy -Force
-    
-    reagentc.exe /setreimage /path C:\\Windows\\System32\\Recovery | Out-Null
-    reagentc.exe /enable | Out-Null
-    Start-Sleep -Seconds 2
-    reagentc.exe /boottore | Out-Null
+Write-Output "[PE-LOG] Dang chen kich ban Format va Auto-Install..."
+$KichBanXoaVaCai | Out-File "$ThuMucGiaoTiep\\Windows\\System32\\LenhRE.cmd" -Encoding oem
+'[LaunchApps]' + [char]13 + [char]10 + 'X:\\Windows\\System32\\LenhRE.cmd' | Out-File "$ThuMucGiaoTiep\\Windows\\System32\\winpeshl.ini" -Encoding ascii
+
+Write-Output "[PE-LOG] Dang dong goi lai file winre.wim..."
+dism.exe /Unmount-Image /MountDir:$ThuMucGiaoTiep /Commit | Out-Null
+
+# MẸO CHỐNG LỖI FULL PHÂN VÙNG: Lưu file WIM thẳng vào ổ C thay vì nhét về System32 (bị đùn vào Recovery ẩn)
+Write-Output "[PE-LOG] Dang thiet lap vi tri luu tru WinRE moi tren o C..."
+$SafeRePath = "C:\\Recovery\\WindowsRE"
+if (-not (Test-Path $SafeRePath)) {{ New-Item -ItemType Directory -Force -Path $SafeRePath | Out-Null }}
+Copy-Item $WinRECopy "$SafeRePath\\winre.wim" -Force
+cmd.exe /c "attrib -h -s -r `"$SafeRePath\\winre.wim`""
+Remove-Item $WinRECopy -Force
+
+Write-Output "[PE-LOG] Dang dang ky duong dan WinRE moi..."
+$kq_set = reagentc.exe /setreimage /path $SafeRePath
+Write-Output $kq_set
+
+Write-Output "[PE-LOG] Dang Enable WinRE..."
+$kq_en = reagentc.exe /enable
+Write-Output $kq_en
+if ($LASTEXITCODE -ne 0) {{ 
+    Write-Output "=> CANH BAO: Lenh Enable WinRE bi loi! He thong co the khong vao duoc PE."
+    exit 1 
+}}
+
+Write-Output "[PE-LOG] Dang dat co (boottore) de ep khoi dong vao WinRE..."
+$kq_boot = reagentc.exe /boottore
+Write-Output $kq_boot
+if ($LASTEXITCODE -ne 0) {{ 
+    Write-Output "=> CANH BAO: Lenh BootToRE bi tu choi!"
+    exit 1 
+}}
+
+Write-Output "[PE-LOG] HOAN TAT 100% QUY TRINH CAU HINH WINRE!"
 """
     
     duong_dan_ps1 = f"{thu_muc_cai_dat}\\config.ps1"
     with open(duong_dan_ps1, "w", encoding="utf-8") as tep_ps1: 
         tep_ps1.write(ma_nguon_ps)
         
-    subprocess.run(
+    ham_ghi_log("========== BẮT ĐẦU LUỒNG XỬ LÝ PE ==========")
+    
+    # CHẠY POWERSHELL VÀ ĐỌC LOG TRỰC TIẾP TỪ ĐẦU RA (LIVE STREAM)
+    tien_trinh = subprocess.Popen(
         ["powershell", "-ExecutionPolicy", "Bypass", "-File", duong_dan_ps1], 
         stdout=subprocess.PIPE, 
-        stderr=subprocess.PIPE, 
-        creationflags=subprocess.CREATE_NO_WINDOW
+        stderr=subprocess.STDOUT, 
+        creationflags=subprocess.CREATE_NO_WINDOW,
+        text=True,
+        encoding='utf-8',
+        errors='ignore'
     )
+    
+    for dong in tien_trinh.stdout:
+        dong_sach = dong.strip()
+        if dong_sach:
+            # Gửi log ra màn hình Tool
+            ham_ghi_log(dong_sach)
+            
+    tien_trinh.wait()
+    ham_ghi_log("========== KẾT THÚC LUỒNG XỬ LÝ PE ==========")
+    
+    if tien_trinh.returncode != 0:
+        raise Exception("Quá trình cài đặt PE bị lỗi giữa chừng. Hãy xem log chi tiết bên trên!")
 
 # ==========================================
-# 5. ĐỘNG CƠ TẢI DỮ LIỆU ĐÁM MÂY
+# 5. ĐỘNG CƠ TẢI DỮ LIỆU ĐÁM MÂY (GIỮ NGUYÊN BẢN XỊN LINK RAW)
 # ==========================================
 def truat_xuat_du_lieu_dam_may(ma_file_tai, link_raw_du_phong, duong_dan_luu_tru, ham_cap_nhat_giao_dien, ham_ghi_log, su_kien_huy):
     
@@ -357,8 +404,8 @@ class BangDieuKhienTrungTam(ctk.CTk):
         self.nut_cai_local = ctk.CTkButton(self.khung_danh_sach_os, text="📁 CHỌN FILE WIM TỪ Ổ CỨNG / USB", font=("Arial", 14, "bold"), fg_color="#047857", hover_color="#065F46", command=self.kich_hoat_cai_dat_local)
         self.nut_cai_local.pack(fill="x", pady=(5, 15), padx=5)
 
-        self.hop_chua_nhat_ky = ctk.CTkTextbox(self, height=100, font=("Consolas", 12), fg_color="#0F172A", text_color="#38BDF8"); self.hop_chua_nhat_ky.grid(row=3, column=0, padx=20, pady=5, sticky="ew")
-        self.hop_chua_nhat_ky.insert("0.0", "Hệ thống lõi V28.1 đã khởi tạo thành công.\n"); self.hop_chua_nhat_ky.configure(state="disabled")
+        self.hop_chua_nhat_ky = ctk.CTkTextbox(self, height=150, font=("Consolas", 12), fg_color="#0F172A", text_color="#38BDF8"); self.hop_chua_nhat_ky.grid(row=3, column=0, padx=20, pady=5, sticky="ew")
+        self.hop_chua_nhat_ky.insert("0.0", "Hệ thống lõi 28.2 đã khởi tạo thành công.\n"); self.hop_chua_nhat_ky.configure(state="disabled")
 
         self.khung_phan_cuoi = ctk.CTkFrame(self, fg_color="transparent"); self.khung_phan_cuoi.grid(row=4, column=0, padx=20, pady=15, sticky="ew"); self.khung_phan_cuoi.grid_columnconfigure(0, weight=1)
         self.thanh_bar_tien_do = ctk.CTkProgressBar(self.khung_phan_cuoi, height=12); self.thanh_bar_tien_do.grid(row=0, column=0, padx=(0, 20), sticky="ew"); self.thanh_bar_tien_do.set(0)
@@ -368,7 +415,12 @@ class BangDieuKhienTrungTam(ctk.CTk):
         self.tien_hanh_quet_kho_du_lieu()
 
     def in_nhat_ky_he_thong(self, dong_thong_diep):
-        self.hop_chua_nhat_ky.configure(state="normal"); self.hop_chua_nhat_ky.insert("end", f"[*] {dong_thong_diep}\n"); self.hop_chua_nhat_ky.see("end"); self.hop_chua_nhat_ky.configure(state="disabled"); self.update()
+        self.hop_chua_nhat_ky.configure(state="normal")
+        # Cuộn xuống dòng cuối ngay lập tức để tạo hiệu ứng Live Stream
+        self.hop_chua_nhat_ky.insert("end", f"[*] {dong_thong_diep}\n")
+        self.hop_chua_nhat_ky.see("end")
+        self.hop_chua_nhat_ky.configure(state="disabled")
+        self.update()
 
     def tien_hanh_quet_kho_du_lieu(self):
         def luong_xu_ly_mang():
@@ -440,7 +492,6 @@ class BangDieuKhienTrungTam(ctk.CTk):
             
             sao_luu_du_lieu_he_thong(thu_muc_chua_anh_wim, self.bien_chon_driver.get(), self.bien_chon_wifi.get(), self.in_nhat_ky_he_thong)
 
-            # LOẠI BỎ COPY TRÙNG LẶP NẾU CHỌN LẠI FILE CŨ
             if duong_dan_local:
                 if os.path.abspath(duong_dan_local).lower() == os.path.abspath(vi_tri_luu_file_wim).lower():
                     self.in_nhat_ky_he_thong("Tối ưu: Nhận diện file WIM đã nằm sẵn trong khoang lưu trữ. Bỏ qua bước copy...")
@@ -467,15 +518,16 @@ class BangDieuKhienTrungTam(ctk.CTk):
                 messagebox.showinfo("Kiểm Thử", f"Đã lưu tại: {vi_tri_luu_file_wim}\nChế độ Test: Máy không bị Format.")
                 return self.khoi_phuc_trang_thai_goc("Kiểm thử thành công.")
 
-            self.in_nhat_ky_he_thong("Đang cấu hình kịch bản tự động vào WinRE...")
+            self.in_nhat_ky_he_thong("--- BẮT ĐẦU CẤU HÌNH WINRE ---")
             tiem_kich_ban_winre(o_dia_an_toan, self.in_nhat_ky_he_thong)
             
-            messagebox.showinfo("Thành Công", "Kịch bản Zero-Touch đã nạp. Máy tính sẽ khởi động lại và bung Win ngay!")
+            messagebox.showinfo("Thành Công", "Mọi thứ đã sẵn sàng. Bấm OK để khởi động lại máy vào màn hình cài đặt.")
             os.system("shutdown /r /f /t 2")
             
         except Exception as loi_nghiem_trong:
-            messagebox.showerror("Lỗi Cục Bộ", str(loi_nghiem_trong))
-            self.khoi_phuc_trang_thai_goc("Thất bại.")
+            # Nếu có lỗi sẽ ném ra bảng thông báo to chà bá cho sếp biết
+            messagebox.showerror("Cảnh Báo Lỗi", str(loi_nghiem_trong))
+            self.khoi_phuc_trang_thai_goc("Thất bại. Vui lòng xem log.")
 
     def khoi_phuc_trang_thai_goc(self, thong_diep_cuoi="Hoạt động tạm dừng."):
         self.co_the_hoat_dong = False
