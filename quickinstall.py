@@ -152,7 +152,7 @@ def sao_luu_du_lieu_he_thong(thu_muc_dich, lua_chon_driver, lua_chon_wifi, ham_g
             subprocess.run(["powershell", "-Command", lenh_sao_luu_chon_loc], creationflags=subprocess.CREATE_NO_WINDOW)
 
 # ==========================================
-# 4. LÕI TIÊM WINRE (V28 - TRỞ VỀ NGUYÊN BẢN ỔN ĐỊNH 100%)
+# 4. LÕI TIÊM WINRE 
 # ==========================================
 def tiem_kich_ban_winre(o_dia_luu_wim, ham_ghi_log):
     chuoi_ngau_nhien = ''.join(random.choices(string.ascii_uppercase + string.digits, k=5))
@@ -174,11 +174,9 @@ def tiem_kich_ban_winre(o_dia_luu_wim, ham_ghi_log):
     os.makedirs(thu_muc_cai_dat, exist_ok=True)
     with open(f"{thu_muc_cai_dat}\\unattend.xml", "w", encoding="utf-8") as tep_xml: tep_xml.write(noi_dung_unattend)
     
-    # KỊCH BẢN POWERSHELL GIỐNG HỆT BẢN ĐẦU TIÊN CỦA SẾP
     ma_nguon_ps = f"""
 $ErrorActionPreference = 'SilentlyContinue'
 
-# Tắt Fast Startup để không bị lỗi khởi động lại vào Win cũ
 powercfg /h off | Out-Null
 
 $KiTuHeThong = [System.IO.Path]::GetPathRoot($env:windir).Substring(0,1)
@@ -190,13 +188,11 @@ $DuongDanWinRE = "C:\\Windows\\System32\\Recovery\\winre.wim"
 $ThuMucGiaoTiep = "C:\\MountRE"
 $WinRECopy = "C:\\winre_xu_ly.wim"
 
-# Ép WinRE nhả file ra thư mục System32
 reagentc.exe /enable | Out-Null
 Start-Sleep -Seconds 2
 reagentc.exe /disable | Out-Null
 Start-Sleep -Seconds 2
 
-# Nếu máy đã bị đổi cấu trúc WIM, kéo từ thư mục backup
 if (-not (Test-Path $DuongDanWinRE)) {{
     if (Test-Path "C:\\Recovery\\WindowsRE\\winre.wim") {{
         Copy-Item "C:\\Recovery\\WindowsRE\\winre.wim" $DuongDanWinRE -Force
@@ -257,7 +253,6 @@ wpeutil reboot
     with open(duong_dan_ps1, "w", encoding="utf-8") as tep_ps1: 
         tep_ps1.write(ma_nguon_ps)
         
-    # LUỒNG PYTHON BỌC KÍN: Chạy ẩn, không bao giờ báo lỗi đỏ (như bản đầu tiên)
     subprocess.run(
         ["powershell", "-ExecutionPolicy", "Bypass", "-File", duong_dan_ps1], 
         stdout=subprocess.PIPE, 
@@ -266,7 +261,7 @@ wpeutil reboot
     )
 
 # ==========================================
-# 5. ĐỘNG CƠ TẢI DỮ LIỆU ĐÁM MÂY (GIỮ NGUYÊN BẢN XỊN LINK RAW)
+# 5. ĐỘNG CƠ TẢI DỮ LIỆU ĐÁM MÂY
 # ==========================================
 def truat_xuat_du_lieu_dam_may(ma_file_tai, link_raw_du_phong, duong_dan_luu_tru, ham_cap_nhat_giao_dien, ham_ghi_log, su_kien_huy):
     
@@ -363,7 +358,7 @@ class BangDieuKhienTrungTam(ctk.CTk):
         self.nut_cai_local.pack(fill="x", pady=(5, 15), padx=5)
 
         self.hop_chua_nhat_ky = ctk.CTkTextbox(self, height=100, font=("Consolas", 12), fg_color="#0F172A", text_color="#38BDF8"); self.hop_chua_nhat_ky.grid(row=3, column=0, padx=20, pady=5, sticky="ew")
-        self.hop_chua_nhat_ky.insert("0.0", "Hệ thống lõi V28 đã khởi tạo thành công.\n"); self.hop_chua_nhat_ky.configure(state="disabled")
+        self.hop_chua_nhat_ky.insert("0.0", "Hệ thống lõi V28.1 đã khởi tạo thành công.\n"); self.hop_chua_nhat_ky.configure(state="disabled")
 
         self.khung_phan_cuoi = ctk.CTkFrame(self, fg_color="transparent"); self.khung_phan_cuoi.grid(row=4, column=0, padx=20, pady=15, sticky="ew"); self.khung_phan_cuoi.grid_columnconfigure(0, weight=1)
         self.thanh_bar_tien_do = ctk.CTkProgressBar(self.khung_phan_cuoi, height=12); self.thanh_bar_tien_do.grid(row=0, column=0, padx=(0, 20), sticky="ew"); self.thanh_bar_tien_do.set(0)
@@ -417,7 +412,9 @@ class BangDieuKhienTrungTam(ctk.CTk):
         self.su_kien_huy_lenh.set(); self.nut_huy_bo.configure(state="disabled")
 
     def kich_hoat_cai_dat_local(self):
-        if self.co_the_hoat_dong: return
+        if self.co_the_hoat_dong: 
+            messagebox.showwarning("Cảnh Báo", "Hệ thống đang bận chạy một tiến trình khác. Vui lòng đợi hoặc tắt mở lại Tool!")
+            return
         duong_dan_file = filedialog.askopenfilename(filetypes=[("Tập tin Windows Image", "*.wim")])
         if not duong_dan_file: return
         if not self.bien_an_toan_test.get() and not messagebox.askyesno("Cảnh Báo", "Hành động này sẽ XÓA SẠCH ổ C. Tiếp tục?"): return
@@ -426,7 +423,9 @@ class BangDieuKhienTrungTam(ctk.CTk):
         threading.Thread(target=self.luong_dieu_phoi_chinh, args=("Cài đặt từ Local", None, None, duong_dan_file), daemon=True).start()
 
     def khoi_tao_tien_trinh(self, nhan_ten_ban_cai, gia_tri_ma_file, gia_tri_link_raw):
-        if self.co_the_hoat_dong: return
+        if self.co_the_hoat_dong: 
+            messagebox.showwarning("Cảnh Báo", "Hệ thống đang bận chạy một tiến trình khác. Vui lòng đợi hoặc tắt mở lại Tool!")
+            return
         if not self.bien_an_toan_test.get() and not messagebox.askyesno("Cảnh Báo", "Hành động này sẽ XÓA SẠCH ổ C. Tiếp tục?"): return
         self.co_the_hoat_dong = True; self.su_kien_huy_lenh.clear(); self.nut_huy_bo.configure(state="normal")
         threading.Thread(target=self.luong_dieu_phoi_chinh, args=(nhan_ten_ban_cai, gia_tri_ma_file, gia_tri_link_raw, None), daemon=True).start()
@@ -441,10 +440,16 @@ class BangDieuKhienTrungTam(ctk.CTk):
             
             sao_luu_du_lieu_he_thong(thu_muc_chua_anh_wim, self.bien_chon_driver.get(), self.bien_chon_wifi.get(), self.in_nhat_ky_he_thong)
 
+            # LOẠI BỎ COPY TRÙNG LẶP NẾU CHỌN LẠI FILE CŨ
             if duong_dan_local:
-                self.in_nhat_ky_he_thong("Đang chép dữ liệu nội bộ...")
-                self.nhan_chi_so_tai.configure(text="Đang chép dữ liệu nội bộ...")
-                self.update(); shutil.copy2(duong_dan_local, vi_tri_luu_file_wim)
+                if os.path.abspath(duong_dan_local).lower() == os.path.abspath(vi_tri_luu_file_wim).lower():
+                    self.in_nhat_ky_he_thong("Tối ưu: Nhận diện file WIM đã nằm sẵn trong khoang lưu trữ. Bỏ qua bước copy...")
+                else:
+                    self.in_nhat_ky_he_thong("Đang tiến hành chép dữ liệu nội bộ...")
+                    self.nhan_chi_so_tai.configure(text="Đang chép dữ liệu... (Tool có thể đơ nhẹ, vui lòng chờ)")
+                    self.update()
+                    shutil.copy2(duong_dan_local, vi_tri_luu_file_wim)
+                    self.in_nhat_ky_he_thong("Sao chép file hoàn tất.")
             else:
                 do_bang_thong_mang(self.in_nhat_ky_he_thong)
                 self.in_nhat_ky_he_thong(f"Mở cổng kết nối: {nhan_ten_ban_cai}...")
