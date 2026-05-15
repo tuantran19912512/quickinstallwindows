@@ -190,10 +190,21 @@ def tiem_kich_ban_winre(o_dia_luu_wim, ham_ghi_log):
     $ThuTuPhanVung = $ThongTinPhanVung.PartitionNumber
     $DuongDanWinRE = "C:\\Windows\\System32\\Recovery\\winre.wim"
     $ThuMucGiaoTiep = "C:\\MountRE"
+    $WinRECopy = "C:\\winre_xu_ly.wim"
     
-    reagentc.exe /enable; reagentc.exe /disable
+    # 1. Tắt WinRE để kéo file winre.wim về đúng thư mục System32\\Recovery
+    reagentc.exe /enable; Start-Sleep 2; reagentc.exe /disable; Start-Sleep 2
+    
+    # Dọn dẹp thư mục Mount nếu bị kẹt từ lần test trước
+    if (Test-Path $ThuMucGiaoTiep) {{ dism.exe /Unmount-Image /MountDir:$ThuMucGiaoTiep /Discard; Remove-Item $ThuMucGiaoTiep -Recurse -Force }}
     New-Item -ItemType Directory -Force -Path $ThuMucGiaoTiep
-    dism.exe /Mount-Image /ImageFile:$DuongDanWinRE /Index:1 /MountDir:$ThuMucGiaoTiep
+    
+    # 2. BƯỚC QUAN TRỌNG: Copy file WIM ra ngoài để phá vỡ bảo vệ Read-Only
+    Copy-Item $DuongDanWinRE $WinRECopy -Force
+    Set-ItemProperty $WinRECopy IsReadOnly $false
+    
+    # 3. Mount file copy
+    dism.exe /Mount-Image /ImageFile:$WinRECopy /Index:1 /MountDir:$ThuMucGiaoTiep
     
     $KichBanXoaVaCai = @"
 @echo off
@@ -210,14 +221,28 @@ wpeutil reboot
 
     $KichBanXoaVaCai | Out-File "$ThuMucGiaoTiep\\Windows\\System32\\LenhRE.cmd" -Encoding oem
     '[LaunchApps]' + [char]13 + [char]10 + 'X:\\Windows\\System32\\LenhRE.cmd' | Out-File "$ThuMucGiaoTiep\\Windows\\System32\\winpeshl.ini" -Encoding ascii
+    
+    # 4. Lưu lại thay đổi vào file WIM copy
     dism.exe /Unmount-Image /MountDir:$ThuMucGiaoTiep /Commit
-    reagentc.exe /enable; reagentc.exe /boottore
+    
+    # 5. Gỡ thuộc tính Ẩn/Hệ thống của file WIM gốc và chép đè
+    cmd.exe /c "attrib -h -s -r `"$DuongDanWinRE`""
+    Copy-Item $WinRECopy $DuongDanWinRE -Force
+    Remove-Item $WinRECopy -Force
+    
+    # 6. Kích hoạt lại WinRE và cắm cờ khởi động
+    reagentc.exe /setreimage /path C:\\Windows\\System32\\Recovery
+    reagentc.exe /enable; Start-Sleep 2
+    reagentc.exe /boottore
     """
     
     with open(f"{thu_muc_cai_dat}\\config.ps1", "w", encoding="utf-8") as tep_ps1: 
         tep_ps1.write(ma_nguon_ps)
         
-    subprocess.run(["powershell", "-File", f"{thu_muc_cai_dat}\\config.ps1"], creationflags=subprocess.CREATE_NO_WINDOW)
+    ket_qua = subprocess.run(["powershell", "-ExecutionPolicy", "Bypass", "-File", f"{thu_muc_cai_dat}\\config.ps1"], capture_output=True, text=True, creationflags=subprocess.CREATE_NO_WINDOW)
+    
+    if ket_qua.returncode != 0:
+        ham_ghi_log(f"Cảnh báo WinRE: Quá trình nạp gặp sự cố -> {ket_qua.stderr.strip()}")
 
 # ==========================================
 # 4. ĐỘNG CƠ TẢI DỮ LIỆU ĐÁM MÂY
@@ -245,7 +270,7 @@ def truat_xuat_du_lieu_dam_may(ma_file_tai, duong_dan_luu_tru, ham_cap_nhat_giao
                         if su_kien_huy.is_set(): 
                             return False
                         
-                        khoi_du_lieu = cau_tra_loi.read(1024 * 1024) # Đọc từng chunk 1MB
+                        khoi_du_lieu = cau_tra_loi.read(1024 * 1024)
                         if not khoi_du_lieu: 
                             break
                             
@@ -344,7 +369,6 @@ class BangDieuKhienTrungTam(ctk.CTk):
                 trinh_doc_csv = csv.DictReader(du_lieu_chuoi)
                 cac_cot_tieu_de = trinh_doc_csv.fieldnames
                 
-                # Tự động map cấu trúc cột linh hoạt
                 khoa_ten_file = 'Filename' if 'Filename' in cac_cot_tieu_de else 'Name'
                 khoa_ma_file = 'ID' if 'ID' in cac_cot_tieu_de else 'FileID'
 
