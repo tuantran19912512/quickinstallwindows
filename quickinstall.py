@@ -237,7 +237,7 @@ wpeutil reboot
     if ket_qua.returncode != 0: ham_ghi_log(f"Cảnh báo WinRE: {ket_qua.stderr.strip()}")
 
 # ==========================================
-# 5. ĐỘNG CƠ TẢI DỮ LIỆU ĐÁM MÂY
+# 5. ĐỘNG CƠ TẢI DỮ LIỆU ĐÁM MÂY (VIEW REDIRECT FIX)
 # ==========================================
 def truat_xuat_du_lieu_dam_may(ma_file_tai, duong_dan_luu_tru, ham_cap_nhat_giao_dien, ham_ghi_log, su_kien_huy):
     if not ma_file_tai:
@@ -279,12 +279,13 @@ def truat_xuat_du_lieu_dam_may(ma_file_tai, duong_dan_luu_tru, ham_cap_nhat_giao
             ham_ghi_log(f"Khóa {thu_tu + 1} lỗi mạng: {str(e)}")
             continue
 
+    # FIX LINK TRÌNH DUYỆT TẠI ĐÂY: Dùng link View gốc của Google Drive
     ham_ghi_log("Tất cả API đã kiệt sức. Tiến hành đẩy link ra trình duyệt web...")
-    link_tai_web = f"https://drive.google.com/uc?export=download&id={ma_file_tai}"
+    link_tai_web = f"https://drive.google.com/file/d/{ma_file_tai}/view"
     
     try:
         webbrowser.open(link_tai_web)
-        ham_ghi_log("Đã mở link trên trình duyệt. Vui lòng tải thủ công.")
+        ham_ghi_log("Đã mở giao diện Google Drive trên trình duyệt. Vui lòng bấm nút Tải xuống.")
         return "WEB_REDIRECT"
     except Exception as e:
         ham_ghi_log(f"Không thể mở trình duyệt: {str(e)}")
@@ -314,7 +315,6 @@ class BangDieuKhienTrungTam(ctk.CTk):
 
         self.khung_danh_sach_os = ctk.CTkScrollableFrame(self, label_text=" DANH MỤC BẢN CÀI ĐẶT CÓ SẴN "); self.khung_danh_sach_os.grid(row=2, column=0, padx=20, pady=10, sticky="nsew")
         
-        # NÚT CHỌN FILE LOCAL MỚI BỔ SUNG
         self.nut_cai_local = ctk.CTkButton(self.khung_danh_sach_os, text="📁 CHỌN FILE WIM TỪ Ổ CỨNG / USB", font=("Arial", 14, "bold"), fg_color="#047857", hover_color="#065F46", command=self.kich_hoat_cai_dat_local)
         self.nut_cai_local.pack(fill="x", pady=(5, 15), padx=5)
 
@@ -410,7 +410,7 @@ class BangDieuKhienTrungTam(ctk.CTk):
                 if ket_qua_tai == "WEB_REDIRECT":
                     try: os.remove(vi_tri_luu_file_wim)
                     except: pass
-                    messagebox.showinfo("Chuyển Hướng Trình Duyệt", "Các máy chủ API hiện đang quá tải.\n\nHệ thống đã mở link tải trực tiếp trên trình duyệt Web.\n\nSAU KHI TẢI XONG FILE, hãy mở lại Tool và chọn tính năng [CHỌN FILE WIM TỪ Ổ CỨNG / USB] màu xanh lá để tiếp tục cài đặt.")
+                    messagebox.showinfo("Chuyển Hướng Trình Duyệt", "Các máy chủ API hiện đang quá tải.\n\nHệ thống đã mở link Drive trên trình duyệt Web. Vui lòng bấm [Tải xuống] thủ công.\n\nSAU KHI TẢI XONG FILE, hãy mở lại Tool và chọn tính năng [CHỌN FILE WIM TỪ Ổ CỨNG / USB] màu xanh lá để tiếp tục cài đặt.")
                     return self.khoi_phuc_trang_thai_goc("Đang chờ người dùng tải file thủ công...")
                 elif not ket_qua_tai: 
                     return self.khoi_phuc_trang_thai_goc("Tiến trình tải dữ liệu bị hủy do lỗi mạng hoặc file lỗi.")
