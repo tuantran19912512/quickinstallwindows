@@ -250,7 +250,7 @@ def tim_hoac_tai_winre(thu_muc, log, huy):
         os.makedirs(save_dir, exist_ok=True)
         dest = os.path.join(save_dir, "winre.wim")
         try:
-            ctx = ssl.create_default_context()
+            ctx = ssl._create_unverified_context()
             req = urllib.request.Request(CLOUD_WINRE, headers={"User-Agent": "Mozilla/5.0"})
             opener = urllib.request.build_opener(urllib.request.HTTPSHandler(context=ctx))
             with opener.open(req, timeout=600) as resp:
@@ -517,11 +517,12 @@ def tai_file(ma_gdrive, link_hf, duong_dan_luu, cap_nhat_ui, log, huy):
         return False
 
     # --- Helper: tai bang Python urllib ---
+    # --- Helper: tai bang Python urllib ---
     def _python(url, ten):
         log(f"[Python] Ket noi {ten}...")
         try:
             headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)", "Accept": "*/*"}
-            ctx = ssl.create_default_context()
+            ctx = ssl._create_unverified_context()
             req = urllib.request.Request(url, headers=headers)
             opener = urllib.request.build_opener(urllib.request.HTTPSHandler(context=ctx))
             with opener.open(req, timeout=60) as resp:
@@ -639,7 +640,7 @@ class App(ctk.CTk):
         self.log_box = ctk.CTkTextbox(self, height=180, font=("Consolas", 12),
                                        fg_color="#0F172A", text_color="#38BDF8")
         self.log_box.grid(row=3, column=0, padx=20, pady=5, sticky="ew")
-        self.log_box.insert("0.0", "He thong loi v32.0 da khoi tao.\n")
+        self.log_box.insert("0.0", "He thong loi v32.1 da khoi tao.\n")
         self.log_box.configure(state="disabled")
 
         # Progress
