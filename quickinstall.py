@@ -82,8 +82,9 @@ def go_bo_bitlocker(log):
         drv = os.environ.get("SystemDrive", "C:")
         out = _chay(f"manage-bde -status {drv}").stdout.decode("utf-8", errors="ignore")
         if any(k in out for k in ["Fully Encrypted", "Protection On", "Encryption", "Ma hoa"]):
-            log(f"Phat hien BitLocker! Dang giai ma {drv}...")
-            _chay(f"manage-bde -off {drv}")
+            log(f"Phat hien BitLocker! Dang Tam dung (Suspend) bao ve {drv}...")
+            # Sử dụng -protectors -disable để mở khóa tức thì cho lần boot tới
+            _chay(f"manage-bde -protectors -disable {drv}")
     except:
         pass
 
@@ -279,16 +280,21 @@ def tim_hoac_tai_winre(thu_muc, log, huy):
     return found
 
 # ============================================================
-# 7. BUOC 2: TIEM KICH BAN VAO WINRE
+# 7. BUOC 2: TIEM KICH BAN VAO WINRE (DA TOI UU BCDEDIT MỚI)
 # ============================================================
 def tiem_winre(winre_path, thu_muc, ten_may, disk_no, part_no, log):
     log("=== [BUOC 2] TIEM KICH BAN VAO WINRE ===")
+    
+    # Tách ổ đĩa và đường dẫn tương đối (Ví dụ: D: và \ZT_Cloud_Install)
+    drive_letter = thu_muc[:2]
+    thu_muc_rel = thu_muc[2:]
 
     ps = f"""
 $ErrorActionPreference = 'Continue'
 $FoundWIM      = "{winre_path}"
 $MountDir      = "C:\\MountRE"
 $WinRECopy     = "C:\\winre_work.wim"
+$SafePath      = "{thu_muc}"
 
 if (Test-Path $MountDir) {{
     dism.exe /Unmount-Image /MountDir:$MountDir /Discard | Out-Null
@@ -296,12 +302,10 @@ if (Test-Path $MountDir) {{
 }}
 New-Item -ItemType Directory -Force -Path $MountDir | Out-Null
 
-Write-Output "[RE] Tat Fast Startup..."
+Write-Output "[RE] Tat Fast Startup & xoa RE cu..."
 powercfg /h off | Out-Null
-
-Write-Output "[RE] Huy dang ky WinRE cu..."
 reagentc.exe /disable | Out-Null
-Start-Sleep -Seconds 2
+Start-Sleep -Seconds 1
 
 Copy-Item $FoundWIM $WinRECopy -Force
 cmd.exe /c "attrib -h -s -r `"$WinRECopy`" >nul 2>&1"
@@ -341,8 +345,15 @@ wpeutil reboot
 
 Write-Output "[RE] Tiem LenhRE.cmd va winpeshl.ini..."
 $LenhRE | Out-File "$MountDir\\Windows\\System32\\LenhRE.cmd" -Encoding oem
-'[LaunchApps]' + [char]13 + [char]10 + 'X:\\Windows\\System32\\LenhRE.cmd' |
-    Out-File "$MountDir\\Windows\\System32\\winpeshl.ini" -Encoding ascii
+'[LaunchApps]' + [char]13 + [char]10 + 'X:\\Windows\\System32\\LenhRE.cmd' | Out-File "$MountDir\\Windows\\System32\\winpeshl.ini" -Encoding ascii
+
+Write-Output "[RE] Trich xuat boot.sdi de ho tro RAMDISK..."
+$SdiPath = "$MountDir\\Windows\\Boot\\DVD\\PCAT\\boot.sdi"
+if (Test-Path $SdiPath) {{
+    Copy-Item $SdiPath "$SafePath\\boot.sdi" -Force
+}} else {{
+    Copy-Item "$MountDir\\Windows\\Boot\\PXE\\boot.sdi" "$SafePath\\boot.sdi" -Force -ErrorAction SilentlyContinue
+}}
 
 Write-Output "[RE] Commit WinRE..."
 $r2 = dism.exe /Unmount-Image /MountDir:$MountDir /Commit
@@ -352,28 +363,49 @@ if ($LASTEXITCODE -ne 0) {{
     exit 1
 }}
 
-$SafePath = "C:\\Recovery\\WindowsRE"
-if (-not (Test-Path $SafePath)) {{ New-Item -ItemType Directory -Force -Path $SafePath | Out-Null }}
+Write-Output "[RE] Sao chep winre.wim vao vung an toan ($SafePath)..."
 Copy-Item $WinRECopy "$SafePath\\winre.wim" -Force
-cmd.exe /c "attrib -h -s -r `"$SafePath\\winre.wim`" >nul 2>&1"
+cmd.exe /c "attrib +h +s +r `"$SafePath\\winre.wim`" >nul 2>&1"
 Remove-Item $WinRECopy -Force -ErrorAction SilentlyContinue
 
-Write-Output "[RE] Dang ky duong dan WinRE moi..."
-$s1 = reagentc.exe /setreimage /path $SafePath
-Write-Output $s1
+Write-Output "[RE] Cau hinh BCD cuong che boot vao WinRE..."
+$ramdisk = bcdedit /create /d "ZT Ramdisk" /device
+$ramdiskGuid = if ($ramdisk -match '(\\{{[a-fA-F0-9-]+\\}})') {{ $matches[1] }} else {{ "" }}
+if (-not $ramdiskGuid) {{ Write-Output "[RE] Loi: Khong lay duoc GUID Ramdisk"; exit 1 }}
 
-Write-Output "[RE] Kich hoat WinRE..."
-$s2 = reagentc.exe /enable
-if ($LASTEXITCODE -ne 0) {{ Write-Output "[RE] LOI enable: $s2"; exit 1 }}
+bcdedit /set $ramdiskGuid ramdisksdioptions locating | Out-Null
+bcdedit /set $ramdiskGuid ramdisksdipath "{thu_muc_rel}\\boot.sdi" | Out-Null
 
-Write-Output "[RE] HOAN TAT TIEM KICH BAN WINRE!"
+$os = bcdedit /create /d "ZT Deploy Environment" /application osloader
+$osGuid = if ($os -match '(\\{{[a-fA-F0-9-]+\\}})') {{ $matches[1] }} else {{ "" }}
+if (-not $osGuid) {{ Write-Output "[RE] Loi: Khong lay duoc GUID OSLoader"; exit 1 }}
+
+# Kiem tra xem may dang boot chuan nao (UEFI efi hay BIOS exe)
+$currentPath = (bcdedit /enum '{{current}}' | Select-String "path").Line
+if ($currentPath -match "\\.efi") {{
+    $winload = "\\Windows\\System32\\winload.efi"
+}} else {{
+    $winload = "\\Windows\\System32\\winload.exe"
+}}
+
+bcdedit /set $osGuid device "ramdisk=[{drive_letter}]{thu_muc_rel}\\winre.wim,$ramdiskGuid" | Out-Null
+bcdedit /set $osGuid osdevice "ramdisk=[{drive_letter}]{thu_muc_rel}\\winre.wim,$ramdiskGuid" | Out-Null
+bcdedit /set $osGuid path $winload | Out-Null
+bcdedit /set $osGuid systemroot "\\Windows" | Out-Null
+bcdedit /set $osGuid winpe "Yes" | Out-Null
+bcdedit /set $osGuid detecthal "Yes" | Out-Null
+
+Write-Output "[RE] Dat lenh Boot 1 lan vao WinRE..."
+bcdedit /bootsequence $osGuid | Out-Null
+
+Write-Output "[RE] HOAN TAT CAU HINH BCD NATIVE BOOT!"
 """
 
     ps1_path = os.path.join(thu_muc, "prep_winre.ps1")
     try:
         with open(ps1_path, "w", encoding="utf-8") as f:
             f.write(ps)
-        log("--- Bat dau xu ly WinRE ---")
+        log("--- Bat dau xu ly WinRE (BCD Method) ---")
         proc = subprocess.Popen(
             ["powershell", "-ExecutionPolicy", "Bypass", "-File", ps1_path],
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
@@ -395,22 +427,15 @@ Write-Output "[RE] HOAN TAT TIEM KICH BAN WINRE!"
             except:
                 pass
 
+
 # ============================================================
-# 8. BUOC 4: BOOT VAO WINRE
+# 8. BUOC 4: BOOT VAO WINRE (DA SUA)
 # ============================================================
 def boot_vao_winre(log):
-    log("=== [BUOC 4] DAT CO BOOT VAO WINRE ===")
-    r = subprocess.run(
-        "reagentc.exe /boottore",
-        shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-        creationflags=subprocess.CREATE_NO_WINDOW
-    )
-    out = r.stdout.decode("utf-8", errors="ignore").strip()
-    log(f"reagentc /boottore: {out}")
-    if r.returncode != 0:
-        raise Exception(f"Lenh BootToRE bi tu choi! {out}")
-    log("May se khoi dong vao WinRE va tu dong bung Windows...")
-
+    log("=== [BUOC 4] HOAN THIEN KHOI DONG ===")
+    log("Thiet lap BCD Bootsequence truc tiep OK.")
+    log("May se khoi dong vao RAMDISK WinRE de bung Windows...")
+    
 # ============================================================
 # 9. DONG CO TAI FILE (Google Drive -> HuggingFace -> Web)
 # ============================================================
@@ -614,7 +639,7 @@ class App(ctk.CTk):
         self.log_box = ctk.CTkTextbox(self, height=180, font=("Consolas", 12),
                                        fg_color="#0F172A", text_color="#38BDF8")
         self.log_box.grid(row=3, column=0, padx=20, pady=5, sticky="ew")
-        self.log_box.insert("0.0", "He thong loi v31.2 da khoi tao.\n")
+        self.log_box.insert("0.0", "He thong loi v32.0 da khoi tao.\n")
         self.log_box.configure(state="disabled")
 
         # Progress
