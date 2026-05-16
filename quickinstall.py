@@ -280,7 +280,7 @@ def tim_hoac_tai_winre(thu_muc, log, huy):
     return found
 
 # ============================================================
-# 7. BUOC 2: TIEM KICH BAN VAO WINRE (DA TOI UU BCDEDIT MỚI)
+# 7. BUOC 2: TIEM KICH BAN VAO WINRE (DA FIX LOI BOOT TRUYỀN THẲNG)
 # ============================================================
 def tiem_winre(winre_path, thu_muc, ten_may, disk_no, part_no, log):
     log("=== [BUOC 2] TIEM KICH BAN VAO WINRE ===")
@@ -347,14 +347,6 @@ Write-Output "[RE] Tiem LenhRE.cmd va winpeshl.ini..."
 $LenhRE | Out-File "$MountDir\\Windows\\System32\\LenhRE.cmd" -Encoding oem
 '[LaunchApps]' + [char]13 + [char]10 + 'X:\\Windows\\System32\\LenhRE.cmd' | Out-File "$MountDir\\Windows\\System32\\winpeshl.ini" -Encoding ascii
 
-Write-Output "[RE] Trich xuat boot.sdi de ho tro RAMDISK..."
-$SdiPath = "$MountDir\\Windows\\Boot\\DVD\\PCAT\\boot.sdi"
-if (Test-Path $SdiPath) {{
-    Copy-Item $SdiPath "$SafePath\\boot.sdi" -Force
-}} else {{
-    Copy-Item "$MountDir\\Windows\\Boot\\PXE\\boot.sdi" "$SafePath\\boot.sdi" -Force -ErrorAction SilentlyContinue
-}}
-
 Write-Output "[RE] Commit WinRE..."
 $r2 = dism.exe /Unmount-Image /MountDir:$MountDir /Commit
 if ($LASTEXITCODE -ne 0) {{
@@ -368,19 +360,28 @@ Copy-Item $WinRECopy "$SafePath\\winre.wim" -Force
 cmd.exe /c "attrib +h +s +r `"$SafePath\\winre.wim`" >nul 2>&1"
 Remove-Item $WinRECopy -Force -ErrorAction SilentlyContinue
 
+Write-Output "[RE] Trich xuat boot.sdi tu HDH hien tai..."
+$SdiPath = "$env:SystemRoot\\Boot\\DVD\\PCAT\\boot.sdi"
+if (Test-Path $SdiPath) {{
+    Copy-Item $SdiPath "$SafePath\\boot.sdi" -Force
+}} else {{
+    $SdiPath2 = "$env:SystemRoot\\System32\\Remoteboot\\boot.sdi"
+    Copy-Item $SdiPath2 "$SafePath\\boot.sdi" -Force -ErrorAction SilentlyContinue
+}}
+
 Write-Output "[RE] Cau hinh BCD cuong che boot vao WinRE..."
 $ramdisk = bcdedit /create /d "ZT Ramdisk" /device
 $ramdiskGuid = if ($ramdisk -match '(\\{{[a-fA-F0-9-]+\\}})') {{ $matches[1] }} else {{ "" }}
 if (-not $ramdiskGuid) {{ Write-Output "[RE] Loi: Khong lay duoc GUID Ramdisk"; exit 1 }}
 
-bcdedit /set $ramdiskGuid ramdisksdioptions locating | Out-Null
+# FIX CỐT LÕI NẰM Ở 2 DÒNG NÀY: Khai báo chính xác partition thay vì locating
+bcdedit /set $ramdiskGuid ramdisksdidevice "partition={drive_letter}" | Out-Null
 bcdedit /set $ramdiskGuid ramdisksdipath "{thu_muc_rel}\\boot.sdi" | Out-Null
 
 $os = bcdedit /create /d "ZT Deploy Environment" /application osloader
 $osGuid = if ($os -match '(\\{{[a-fA-F0-9-]+\\}})') {{ $matches[1] }} else {{ "" }}
 if (-not $osGuid) {{ Write-Output "[RE] Loi: Khong lay duoc GUID OSLoader"; exit 1 }}
 
-# Kiem tra xem may dang boot chuan nao (UEFI efi hay BIOS exe)
 $currentPath = (bcdedit /enum '{{current}}' | Select-String "path").Line
 if ($currentPath -match "\\.efi") {{
     $winload = "\\Windows\\System32\\winload.efi"
@@ -395,8 +396,10 @@ bcdedit /set $osGuid systemroot "\\Windows" | Out-Null
 bcdedit /set $osGuid winpe "Yes" | Out-Null
 bcdedit /set $osGuid detecthal "Yes" | Out-Null
 
-Write-Output "[RE] Dat lenh Boot 1 lan vao WinRE..."
+Write-Output "[RE] Dat lenh Boot vao Menu trien khai..."
 bcdedit /bootsequence $osGuid | Out-Null
+bcdedit /displayorder $osGuid /addfirst | Out-Null
+bcdedit /timeout 5 | Out-Null
 
 Write-Output "[RE] HOAN TAT CAU HINH BCD NATIVE BOOT!"
 """
