@@ -638,7 +638,7 @@ class BangDieuKhienTrungTam(ctk.CTk):
             fg_color="#0F172A", text_color="#38BDF8"
         )
         self.hop_chua_nhat_ky.grid(row=3, column=0, padx=20, pady=5, sticky="ew")
-        self.hop_chua_nhat_ky.insert("0.0", "Hệ thống lõi 31.0 đã khởi tạo thành công.\n")
+        self.hop_chua_nhat_ky.insert("0.0", "Hệ thống lõi 31.1 đã khởi tạo thành công.\n")
         self.hop_chua_nhat_ky.configure(state="disabled")
 
         # --- Thanh tiến độ ---
