@@ -643,7 +643,7 @@ class App(ctk.CTk):
         self.log_box = ctk.CTkTextbox(self, height=180, font=("Consolas", 12),
                                        fg_color="#0F172A", text_color="#38BDF8")
         self.log_box.grid(row=3, column=0, padx=20, pady=5, sticky="ew")
-        self.log_box.insert("0.0", "He thong loi v32.1 da khoi tao.\n")
+        self.log_box.insert("0.0", "He thong loi v32.2 da khoi tao.\n")
         self.log_box.configure(state="disabled")
 
         # Progress
